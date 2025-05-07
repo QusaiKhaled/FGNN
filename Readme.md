@@ -52,3 +52,5 @@ The current objective is building a baseline leak localization model using a **f
 2. Parameters like **diameter** and **roughness** differ from the actual network by ~10%.
 
 
+![table](https://github.com/user-attachments/assets/7b2230e1-678e-440d-bcca-6421fb1bc4dd)
+![network](https://github.com/user-attachments/assets/689dad60-9b08-40df-be2f-db08dd2e5b71)
