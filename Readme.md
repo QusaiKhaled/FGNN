@@ -51,10 +51,4 @@ The current objective is building a baseline leak localization model using a **f
 1. Contains **nominal parameters** and **weekly demand profiles** with ~10% variation.  
 2. Parameters like **diameter** and **roughness** differ from the actual network by ~10%.
 
-#### Data Head
 
-![Sensor and Leak Summary](FGNN/imgs/table.png)
-
-#### Network Structure
-
-![Network](imgs/network.png)
