@@ -53,7 +53,7 @@ The current objective is building a baseline leak localization model using a **f
 
 #### Data Head
 
-![Sensor and Leak Summary](imgs/table.png)
+![Sensor and Leak Summary](FGNN/imgs/table.png)
 
 #### Network Structure
 
