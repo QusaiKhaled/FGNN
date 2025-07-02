@@ -6,6 +6,13 @@ The current objective is building a baseline leak localization model using a **f
 
 ---
 
+## Virtual Env initialization
+
+```bash
+uv sync
+source .venv/bin/activate
+```
+
 ### Data Description
 
 #### Sensors
