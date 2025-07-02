@@ -1,0 +1,183 @@
+import os
+import torch
+import torch.nn.functional as F
+import numpy as np
+import matplotlib.pyplot as plt
+
+from torch_geometric.utils import negative_sampling
+from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve
+
+from tqdm import tqdm
+import time
+import warnings
+
+from fgnn.data.dataset import FastBatchDataLoader, apply_augmentations
+
+warnings.filterwarnings("ignore", category=UserWarning)
+
+
+# --- Training & Evaluation Logic for GAE ---
+def train_gae_epoch(model, loader, opt, device):
+    model.train()
+    total_loss = 0
+    bar = tqdm(loader, desc="Training GAE", unit="batch")
+    
+    for batch in bar:
+        batch = batch.to(device)
+        opt.zero_grad()
+        augmented_x, augmented_edge_index = apply_augmentations(batch)
+        z = model.encode(augmented_x, augmented_edge_index, batch.batch)
+        pos_edge_index = batch.edge_index
+        neg_edge_index = negative_sampling(pos_edge_index, num_nodes=batch.num_nodes, num_neg_samples=pos_edge_index.size(1))
+        pos_logits = model.decode(z, pos_edge_index)
+        neg_logits = model.decode(z, neg_edge_index)
+        logits = torch.cat([pos_logits, neg_logits], dim=0)
+        labels = torch.cat([torch.ones(pos_logits.size(0)), torch.zeros(neg_logits.size(0))], dim=0).to(device)
+        loss = F.binary_cross_entropy_with_logits(logits, labels)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        total_loss += loss.item()
+        bar.set_postfix({'loss': loss.item()})
+    return total_loss / len(loader)
+
+
+def evaluate_gae(model, loader, device, epoch=None, logger=None, folder=None):
+    model.eval()
+    all_scores, all_labels = [], []
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            z = model.encode(batch.x, batch.edge_index, batch.batch)
+            logits = model.decode(z, batch.edge_index)
+            anomaly_scores = -torch.log(torch.sigmoid(logits) + 1e-8)
+            labels = batch.edge_leak_target
+            if anomaly_scores.shape[0] != labels.shape[0]:
+                m = min(anomaly_scores.shape[0], labels.shape[0])
+                anomaly_scores = anomaly_scores[:m]
+                labels = labels[:m]
+            all_scores.append(anomaly_scores.cpu())
+            all_labels.append(labels.cpu().long())
+    if not all_scores:
+        return {'auc': 0.5, 'ap': 0.0, 'total_positive': 0, 'total_negative': 0}
+    scores = torch.cat(all_scores).numpy()
+    labels = torch.cat(all_labels).numpy()
+    if (epoch is not None) and (epoch % 5 == 0):
+        pos_scores = scores[labels == 1]
+        neg_scores = scores[labels == 0]
+        plt.figure()
+        def safe_bins(arr, max_bins=100): return 1 if np.ptp(arr) == 0 else max_bins
+        plt.hist(neg_scores, bins=safe_bins(neg_scores), alpha=0.5, label='neg')
+        plt.hist(pos_scores, bins=safe_bins(pos_scores), alpha=0.5, label='pos')
+        plt.legend()
+        plt.savefig(os.path.join(folder, f'scores_hist_epoch_{epoch}.png'))
+        plt.close()
+        
+        precision, recall, thr = precision_recall_curve(labels, scores)
+        f1 = 2 * precision * recall / (precision + recall + 1e-8)
+        best = f1.argmax()
+        logger.info(f"[Epoch {epoch}] Best F1={f1[best]:.4f} at threshold={thr[best]:.4f}")
+        fpr, tpr, thr = roc_curve(labels, scores)
+        j = (tpr - fpr).argmax()
+        logger.info(f"[Epoch {epoch}] Youden’s J={tpr[j]-fpr[j]:.4f} at thr={thr[j]:.4f}")
+    if len(np.unique(labels)) < 2:
+        return {'auc': 0.5, 'ap': float(np.mean(labels)), 'total_positive': int((labels==1).sum()), 'total_negative': int((labels==0).sum())}
+    auc = roc_auc_score(labels, scores)
+    ap = average_precision_score(labels, scores)
+    return {'auc': auc, 'ap': ap, 'total_positive': int((labels==1).sum()), 'total_negative': int((labels==0).sum())}
+
+
+def get_detailed_classification_metrics(model, loader, device, threshold=0.5):
+    model.eval()
+    all_scores, all_labels = [], []
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            z = model.encode(batch.x, batch.edge_index, batch.batch)
+            logits = model.decode(z, batch.edge_index)
+            anomaly_scores = -torch.log(torch.sigmoid(logits) + 1e-8)
+            labels = batch.edge_leak_target
+            if anomaly_scores.shape[0] != labels.shape[0]:
+                m = min(anomaly_scores.shape[0], labels.shape[0])
+                anomaly_scores = anomaly_scores[:m]
+                labels = labels[:m]
+            all_scores.append(anomaly_scores.cpu())
+            all_labels.append(labels.cpu().long())
+    if not all_scores:
+        return {}
+    scores = torch.cat(all_scores).numpy()
+    labels = torch.cat(all_labels).numpy()
+    preds = (scores > threshold).astype(int)
+    tp = ((preds==1)&(labels==1)).sum(); fn = ((preds==0)&(labels==1)).sum()
+    tn = ((preds==0)&(labels==0)).sum(); fp = ((preds==1)&(labels==0)).sum()
+    auc = roc_auc_score(labels, scores) if len(np.unique(labels))>=2 else 0.5
+    return {'auc': auc, 'total_positive': int((labels==1).sum()), 'correct_positive': int(tp), 'incorrect_positive': int(fn), 'total_negative': int((labels==0).sum()), 'correct_negative': int(tn), 'incorrect_negative': int(fp)}
+
+
+def run_gae_training(gae, train_data, test_data, params, logger=None, wandb_run=None, folder=None):
+    
+    train_params = params.training
+    
+    batch_size = train_params.batch_size
+    epochs = train_params.epochs
+    lr = train_params.learning_rate
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    logger.info(f"Using device: {device}")
+    train_loader = FastBatchDataLoader(train_data, batch_size=batch_size, shuffle=True)
+    test_loader = FastBatchDataLoader(test_data, batch_size=batch_size, shuffle=False)
+    model = gae.to(device)
+    logger.info(f"GAE model params: {sum(p.numel() for p in model.parameters()):,}")
+    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-3)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'max', patience=10, factor=0.7)
+    best_auc = 0
+    total_train_time = 0
+    for epoch in range(epochs):
+        start_time = time.time()
+        loss = train_gae_epoch(model, train_loader, opt, device)
+        total_train_time += time.time() - start_time
+        metrics = evaluate_gae(model, test_loader, device, epoch+1, logger, folder)
+        auc = metrics['auc']
+        current_lr = opt.param_groups[0]['lr']
+        sched.step(auc)
+        logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Test AUC: {auc:.4f} | LR: {current_lr:.2e}")
+        if auc > best_auc:
+            best_auc = auc
+            torch.save(model.state_dict(), os.path.join(folder, 'best_gae_model.pth'))
+    logger.info(f"\nTotal training time: {total_train_time:.2f}s, Avg per epoch: {total_train_time/epochs:.2f}s")
+    logger.info("\nLoading best model for final evaluation...")
+    model.load_state_dict(torch.load(os.path.join(folder, 'best_gae_model.pth'), map_location=device))
+    all_scores, all_labels = [], []
+    model.eval()
+    
+    bar = tqdm(test_loader, desc="Evaluating GAE", unit="batch")
+    
+    with torch.no_grad():
+        for batch in test_loader:
+            batch = batch.to(device)
+            z = model.encode(batch.x, batch.edge_index, batch.batch)
+            logits = model.decode(z, batch.edge_index)
+            scores_batch = -torch.log(torch.sigmoid(logits) + 1e-8)
+            labels_batch = batch.edge_leak_target
+            if scores_batch.shape[0] != labels_batch.shape[0]:
+                m = min(scores_batch.shape[0], labels_batch.shape[0])
+                scores_batch = scores_batch[:m]
+                labels_batch = labels_batch[:m]
+            all_scores.append(scores_batch.cpu().numpy())
+            all_labels.append(labels_batch.cpu().numpy())
+    scores = np.concatenate(all_scores)
+    labels = np.concatenate(all_labels)
+    fpr, tpr, thr = roc_curve(labels, scores)
+    j_stat = tpr - fpr
+    best_idx = j_stat.argmax()
+    final_thr = thr[best_idx]
+    logger.info(f"Final Youden’s J={j_stat[best_idx]:.4f} at threshold={final_thr:.4f}")
+    detailed_metrics = get_detailed_classification_metrics(model, test_loader, device, threshold=final_thr)
+    logger.info("\nFINAL SEMI-SUPERVISED GAE RESULTS")
+    logger.info(f"  Test AUC: {detailed_metrics['auc']:.4f}")
+    logger.info(f"  Total Positive: {detailed_metrics['total_positive']}")
+    logger.info(f"  Correct Positive: {detailed_metrics['correct_positive']}")
+    logger.info(f"  Incorrect Positive: {detailed_metrics['incorrect_positive']}")
+    logger.info(f"  Total Negative: {detailed_metrics['total_negative']}")
+    logger.info(f"  Correct Negative: {detailed_metrics['correct_negative']}")
+    logger.info(f"  Incorrect Negative: {detailed_metrics['incorrect_negative']}")

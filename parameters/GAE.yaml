@@ -1,0 +1,28 @@
+group: GAE
+
+parameters:
+  seed: [42]
+
+  training:
+    batch_size: [8]
+    epochs: [50]
+    num_workers: [8]
+    learning_rate: [0.0001]
+    patience: [20]
+    train_ds: [capella, umbra]
+    val_ds: [capella, umbra]
+    checkpoints: [./checkpoints/vit_MODEL]
+    #mode: [all]  # Choices: [all, sar, opt]
+
+  dataset:
+    path: [Data/Water_Graph.pt]
+
+  model:
+    name: [GAE]
+    hidden_dim: [64]
+    latent_dim: [32]
+    depth: [5]
+    dropout: [0.3]
+    max_hops: [3]
+
+other_grids:

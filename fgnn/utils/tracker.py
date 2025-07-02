@@ -16,8 +16,8 @@ import wandb
 from PIL import Image
 from matplotlib import pyplot as plt
 
-from rddl.utils.logger import get_logger
-from rddl.utils.utils import write_yaml
+from ..utils.logger import get_logger
+from ..utils.utils import write_yaml
 
 
 def unnormalize(image_tensor):

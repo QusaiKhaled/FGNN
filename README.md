@@ -6,13 +6,6 @@ The current objective is building a baseline leak localization model using a **f
 
 ---
 
-## Virtual Env initialization
-
-```bash
-uv sync
-source .venv/bin/activate
-```
-
 ### Data Description
 
 #### Sensors
@@ -61,3 +54,20 @@ source .venv/bin/activate
 
 ![table](https://github.com/user-attachments/assets/7b2230e1-678e-440d-bcca-6421fb1bc4dd)
 ![network](https://github.com/user-attachments/assets/689dad60-9b08-40df-be2f-db08dd2e5b71)
+
+## Installation
+
+### Virtual Env initialization
+
+```bash
+uv sync
+source .venv/bin/activate
+```
+
+## Run
+
+### Create Graphs
+
+```bash
+python main.py create
+```

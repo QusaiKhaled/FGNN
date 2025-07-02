@@ -8,3 +8,8 @@ __pycache__/
 venv/
 .env
 .venv/
+
+# Outputs
+out/
+wandb/
+tmp/
