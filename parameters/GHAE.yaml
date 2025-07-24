@@ -14,10 +14,11 @@ parameters:
     path: [Data/Water_Graph_dist.pt]
 
   model:
-    name: [GAE]
+    name: [GHAE]
     hidden_dim: [64]
     latent_dim: [32]
     depth: [5]
     dropout: [0.3]
+    max_hops: [3]
 
 other_grids:

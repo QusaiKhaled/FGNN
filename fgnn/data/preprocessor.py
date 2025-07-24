@@ -2,6 +2,8 @@ import torch
 import numpy as np
 from torch_geometric.data import Data
 
+import einops
+
 # --- MODIFIED: Preprocessing for Semi-Supervised Learning ---
 class SemiSupervisedPreprocessor:
     """
@@ -9,14 +11,14 @@ class SemiSupervisedPreprocessor:
     It divides sequences into training and testing by chronological order,
     imputes missing values, normalizes features, and constructs fixed-size windows.
     """
-    def __init__(self, data, window_size=288, stride=144, train_ratio=0.7, max_windows=None):
+    def __init__(self, data, window_size=288, stride=144, train_ratio=0.7, max_windows=None, num_nodes_features=1):
         self.data = data
         self.window_size = window_size
         self.stride = stride
         self.train_ratio = train_ratio
         self.max_windows = max_windows
         self.num_nodes = data.x.shape[0]
-        self.num_node_features = 1
+        self.num_node_features = num_nodes_features
         self.num_timesteps = data.x.shape[1] // self.num_node_features
 
     def _split_time(self):
@@ -72,12 +74,27 @@ class SemiSupervisedPreprocessor:
                 test_windows.append(graph)
 
         return train_windows, test_windows
+    
+    def attach_static_features(self, xt_norm, xv_norm):
+        # normalize static features
+        mu = self.data.static_features.mean(dim=0)
+        sigma = self.data.static_features.std(dim=0).clamp(min=1e-8)
+        self.data.static_features = (self.data.static_features - mu) / sigma
+        static_tr = einops.repeat(self.data.static_features, 'n f -> n t f', t=xt_norm.shape[1])
+        static_te = einops.repeat(self.data.static_features, 'n f -> n t f', t=xv_norm.shape[1])
+        
+        xt_norm = torch.cat([xt_norm, static_tr], dim=-1)
+        xv_norm = torch.cat([xv_norm, static_te], dim=-1)
+        
+        return xt_norm, xv_norm
 
     def preprocess(self):
         # Split chronologically
         (xt, yt), (xv, yv) = self._split_time()
         # Impute & normalize
         xt_norm, xv_norm = self._impute_and_normalize(xt, xv)
+        # Attach static features
+        xt_norm, xv_norm = self.attach_static_features(xt_norm, xv_norm)
         # Create windows
         train_data, _ = self._create_windows(xt_norm, yt, is_training_set=True)
         _, test_data = self._create_windows(xv_norm, yv, is_training_set=False)

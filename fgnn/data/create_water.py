@@ -3,6 +3,7 @@ import networkx as nx
 import numpy as np
 import random
 import torch
+import einops
 
 from torch_geometric.data import Data
 from pathlib import Path
@@ -64,7 +65,101 @@ def make_undirected(data):
 
     return data
 
-def create_graph_water(root="Data"):
+def create_propagated_features(G, pressure_df, num_timesteps):
+    
+    num_nodes = len(G.nodes)  # Total number of nodes
+
+    valid_pressure_nodes = [n for n in G.nodes if n in pressure_df.columns]
+    node_pressure_data = {
+        n: np.expand_dims(pressure_df[n].values, axis=1)
+        for n in valid_pressure_nodes
+    }
+
+    node_features = []
+    pressure_source_distance = []
+    feature_mask = []  # 1 if original data, 0 if imputed or missing
+
+    bar = tqdm(G.nodes, desc="Propagating features", unit="node", leave=False)
+
+    for node in bar:
+        if node in pressure_df.columns:
+            pressure = node_pressure_data[node]
+            dist = 0
+            mask = [1]
+        else:
+            try:
+                distances = nx.single_source_shortest_path_length(G, node)
+                candidates = [(src, d) for src, d in distances.items() if src in node_pressure_data]
+                if not candidates:
+                    raise ValueError("No reachable pressure-known node")
+
+                nearest_node, dist = min(candidates, key=lambda x: x[1])
+                pressure = node_pressure_data[nearest_node]
+                mask = [0]
+
+            except (nx.NetworkXNoPath, ValueError):
+                # Warning: No path to any pressure node
+                bar.write(f"Warning: No reachable pressure node for {node}. Imputing with NaN.")
+                # Impute with NaN for this node
+                pressure = np.full((num_timesteps, 1), np.nan)
+                dist = np.inf
+                mask = [0]
+
+        node_features.append(pressure)
+        pressure_source_distance.append([dist])
+        feature_mask.append(mask)
+
+
+    # Stack node features to form a 3D array: [num_nodes, timesteps, 1]
+    node_features = np.stack(node_features)
+
+    # Stack feature mask to form a 2D array: [num_nodes, 1]
+    # feature_mask = np.array(feature_mask)
+    pressure_source_distance = torch.from_numpy(np.array(pressure_source_distance))
+    node_features = torch.from_numpy(node_features).float() # [num_nodes, timesteps, features]
+
+    return node_features, pressure_source_distance
+
+
+
+def create_masked_features(G_nodes, pressure_df, num_timesteps):
+    # === Node Features (only pressure) ===
+    node_features = []  # Will hold pressure time series per node
+    feature_mask = []  # Will mark which nodes have actual pressure data
+    num_nodes = len(G_nodes)
+
+    bar = tqdm(
+        G_nodes, desc="Processing nodes", unit="node", leave=False
+    )  # Progress bar for nodes
+
+    for node in bar:
+        if node in pressure_df.columns:
+            # If pressure data is available for this node
+            p = pressure_df[node].values  # Time series of pressures
+            p_mask = 1  # Data is available
+        else:
+            # If pressure data is missing, fill with NaNs
+            p = np.full(num_timesteps, np.nan)
+            p_mask = 0  # Data not available
+
+        node_feat = np.expand_dims(
+            p, axis=1
+        )  # Convert shape [T] to [T, 1] for consistency
+        node_features.append(node_feat)  # Add to feature list
+        feature_mask.append([p_mask])  # Append data availability mask
+        
+    # Stack node features to form a 3D array: [num_nodes, timesteps, 1]
+    node_features = np.stack(node_features)
+
+    # Stack feature mask to form a 2D array: [num_nodes, 1]
+    feature_mask = np.array(feature_mask)
+
+    # Flatten time dimension to create 2D tensor for GNN: [num_nodes, timesteps]
+    x = torch.from_numpy(node_features).float().view(num_nodes, -1)
+        
+    return x, feature_mask
+
+def create_graph_water(parameters):
     """
     Create a graph dataset for water leak detection from an Excel file.
 
@@ -72,7 +167,9 @@ def create_graph_water(root="Data"):
     Returns:
         pd.DataFrame: Processed DataFrame with stripped whitespace.
     """
-
+    root = parameters.get("root", "Data")  # Default root directory
+    feature_distance = parameters.get("feature_distance", False)
+    
     root = Path(root)
     excel_file = root / "GraphExcel.xlsx"
     # Read the Excel file named 'GraphExcel.xlsx' in the same directory
@@ -113,38 +210,15 @@ def create_graph_water(root="Data"):
     num_nodes = len(G_nodes)  # Total number of nodes
     num_timesteps = len(pressure_df)  # Number of time steps in pressure data
 
-    # === Node Features (only pressure) ===
-    node_features = []  # Will hold pressure time series per node
-    feature_mask = []  # Will mark which nodes have actual pressure data
-
-    bar = tqdm(
-        G_nodes, desc="Processing nodes", unit="node", leave=False
-    )  # Progress bar for nodes
-
-    for node in bar:
-        if node in pressure_df.columns:
-            # If pressure data is available for this node
-            p = pressure_df[node].values  # Time series of pressures
-            p_mask = 1  # Data is available
-        else:
-            # If pressure data is missing, fill with NaNs
-            p = np.full(num_timesteps, np.nan)
-            p_mask = 0  # Data not available
-
-        node_feat = np.expand_dims(
-            p, axis=1
-        )  # Convert shape [T] to [T, 1] for consistency
-        node_features.append(node_feat)  # Add to feature list
-        feature_mask.append([p_mask])  # Append data availability mask
-
-    # Stack node features to form a 3D array: [num_nodes, timesteps, 1]
-    node_features = np.stack(node_features)
-
-    # Stack feature mask to form a 2D array: [num_nodes, 1]
-    feature_mask = np.array(feature_mask)
-
-    # Flatten time dimension to create 2D tensor for GNN: [num_nodes, timesteps]
-    x = torch.from_numpy(node_features).float().view(num_nodes, -1)
+    if feature_distance:
+        x, static_features = create_propagated_features(
+            G, pressure_df, num_timesteps
+        )
+    else:
+        x, static_features = create_masked_features(
+            G_nodes, pressure_df, num_timesteps
+        )  # Create node features and mask
+        
 
     # === Edge Index ===
     # Convert edges into PyG format: [2, num_edges] with node indices
@@ -160,9 +234,9 @@ def create_graph_water(root="Data"):
     data = Data()
     data.x = x  # Node features (flattened pressure series)
     data.edge_index = edge_index  # Connectivity information
-    data.feature_mask = torch.tensor(
-        feature_mask, dtype=torch.float
-    )  # Mask for missing features
+    data.static_features = torch.tensor(
+        static_features, dtype=torch.float
+    )
 
     # === Load leakage target CSV ===
     # This file contains leakage values per pipe over time (target variable)
@@ -297,5 +371,8 @@ def create_graph_water(root="Data"):
     print("✅ Leak target has been binarized for leak localization (0 = no leak, 1 = leak).")
 
     # Save the updated graph
-    torch.save(data, root / 'Water_Graph.pt')
-    print(f"✅ Graph saved as '{root / "Water_Graph.pt"}'.")
+    filename = "Water_Graph.pt"
+    if feature_distance:
+        filename = "Water_Graph_dist.pt"
+    torch.save(data, root / filename)
+    print(f"✅ Graph saved as '{root / filename}'.")

@@ -116,10 +116,11 @@ def run(
     )
 
 @cli.command("create")
-@click.option("--root", type=click.Path(exists=True, file_okay=False, dir_okay=True), default="Data", help="Root directory to create the graphs")
-def create(root):
+@click.option("-p", "--parameters", default="parameters/preprocessing/feature_distance.yaml", help="Path to the parameters file")
+def create(parameters):
     from fgnn.data.create_water import create_graph_water
-    create_graph_water(root=root)
+    parameters = load_yaml(parameters)
+    create_graph_water(parameters=parameters)
 
 
 if __name__ == "__main__":

@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
+import torch_geometric.nn as pyg_nn
 from torch_scatter import scatter_max
 
 from .modules import BatchOptimizedSensorAttentionConv, MLPDecoder
 
 
-class DeepResGraphAutoencoder(nn.Module):
+class GrassHopperAutoencoder(nn.Module):
     def __init__(self, in_channels, hidden_dim, latent_dim, depth=6, dropout=0.2, max_hops=3):
         super().__init__()
         self.depth = depth
@@ -38,6 +38,26 @@ class DeepResGraphAutoencoder(nn.Module):
                 h = h + skip
             prev = h
         return prev
+
+    def decode(self, z, edge_index):
+        return self.decoder(z, edge_index)
+    
+    
+class GraphAutoencoder(nn.Module):
+    def __init__(self, in_channels, hidden_dim, latent_dim, depth=6, dropout=0.2, message_passer="GAT",  **kwargs):
+        super().__init__()
+        self.encoder = pyg_nn.__dict__[message_passer](
+            in_channels=in_channels,
+            hidden_channels=hidden_dim,
+            out_channels=latent_dim,
+            num_layers=depth,
+            dropout=dropout,
+            **kwargs
+        )
+        self.decoder = MLPDecoder(in_channels=latent_dim, hidden_channels=hidden_dim)
+
+    def encode(self, x, edge_index, batch):
+        return self.encoder(x, edge_index, batch)
 
     def decode(self, z, edge_index):
         return self.decoder(z, edge_index)

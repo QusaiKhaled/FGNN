@@ -4,9 +4,32 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
-            "name": "Train",
+            "name": "Create",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "create",
+                "-p",
+                "parameters/preprocessing/feature_distance.yaml",
+            ]
+        },
+        {
+            "name": "Train GHAE",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "grid",
+                "--parameters",
+                "parameters/GHAE.yaml",
+            ]
+        },
+        {
+            "name": "Train GAE",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
@@ -16,6 +39,6 @@
                 "--parameters",
                 "parameters/GAE.yaml",
             ]
-        }
+        },
     ]
 }

@@ -1,0 +1,4 @@
+root: Data
+
+# Adds distance to the closest valued node as a feature
+feature_distance: true

@@ -4,6 +4,10 @@ Data/Water_Graph.pt
 *.pyc
 __pycache__/
 
+# pth
+*.pth
+*.pt
+
 # venv
 venv/
 .env

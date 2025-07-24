@@ -1,4 +1,4 @@
-from .GAE import DeepResGraphAutoencoder
+from .GAE import GrassHopperAutoencoder, GraphAutoencoder
 
 
 def get_model(parameters):
@@ -20,7 +20,8 @@ def get_model(parameters):
     parameters = {k:v for k,v in parameters.items() if k != 'name'}
 
     models = {
-        'GAE': DeepResGraphAutoencoder,
+        'GHAE': GrassHopperAutoencoder,
+        'GAE': GraphAutoencoder
     }
 
     if model_name not in models:
