@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch_geometric.nn import MessagePassing
-from torch_scatter import scatter_max
+# from torch_scatter import scatter_max
 
 # --- Super Efficient Batch-Optimized Sensor Attention K-Hop Aggregation ---
 class BatchOptimizedSensorAttentionConv(MessagePassing):
