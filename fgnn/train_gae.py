@@ -2,10 +2,10 @@ import os
 import torch
 import torch.nn.functional as F
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from torch_geometric.utils import negative_sampling
-from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve
+from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve, precision_recall_fscore_support
 
 from tqdm import tqdm
 import time
@@ -49,52 +49,7 @@ class GAETrainer:
             bar.set_postfix({'loss': loss.item()})
         return total_loss / len(loader)
 
-    def evaluate_gae(self, model, loader, epoch=None):
-        model.eval()
-        all_scores, all_labels = [], []
-        with torch.no_grad():
-            for batch in loader:
-                batch = batch.to(self.device)
-                z = model.encode(batch.x, batch.edge_index, batch.batch)
-                logits = model.decode(z, batch.edge_index)
-                anomaly_scores = -torch.log(torch.sigmoid(logits) + 1e-8)
-                labels = batch.edge_leak_target
-                if anomaly_scores.shape[0] != labels.shape[0]:
-                    m = min(anomaly_scores.shape[0], labels.shape[0])
-                    anomaly_scores = anomaly_scores[:m]
-                    labels = labels[:m]
-                all_scores.append(anomaly_scores.cpu())
-                all_labels.append(labels.cpu().long())
-        if not all_scores:
-            return {'auc': 0.5, 'ap': 0.0, 'total_positive': 0, 'total_negative': 0}
-        scores = torch.cat(all_scores).numpy()
-        labels = torch.cat(all_labels).numpy()
-        if (epoch is not None) and (epoch % 5 == 0):
-            pos_scores = scores[labels == 1]
-            neg_scores = scores[labels == 0]
-            plt.figure()
-            def safe_bins(arr, max_bins=100): return 1 if np.ptp(arr) == 0 else max_bins
-            plt.hist(neg_scores, bins=safe_bins(neg_scores), alpha=0.5, label='neg')
-            plt.hist(pos_scores, bins=safe_bins(pos_scores), alpha=0.5, label='pos')
-            plt.legend()
-            plt.savefig(os.path.join(self.folder, f'scores_hist_epoch_{epoch}.png'))
-            plt.close()
-            
-            precision, recall, thr = precision_recall_curve(labels, scores)
-            f1 = 2 * precision * recall / (precision + recall + 1e-8)
-            best = f1.argmax()
-            self.logger.info(f"[Epoch {epoch}] Best F1={f1[best]:.4f} at threshold={thr[best]:.4f}")
-            fpr, tpr, thr = roc_curve(labels, scores)
-            j = (tpr - fpr).argmax()
-            self.logger.info(f"[Epoch {epoch}] Youden’s J={tpr[j]-fpr[j]:.4f} at thr={thr[j]:.4f}")
-        if len(np.unique(labels)) < 2:
-            return {'auc': 0.5, 'ap': float(np.mean(labels)), 'total_positive': int((labels==1).sum()), 'total_negative': int((labels==0).sum())}
-        auc = roc_auc_score(labels, scores)
-        ap = average_precision_score(labels, scores)
-        return {'auc': auc, 'ap': ap, 'total_positive': int((labels==1).sum()), 'total_negative': int((labels==0).sum())}
-
-
-    def get_detailed_classification_metrics(self, model, loader, threshold=0.5):
+    def evaluate_gae(self, model, loader, threshold=0.5, epoch=None):
         model.eval()
         all_scores, all_labels = [], []
         with torch.no_grad():
@@ -115,10 +70,22 @@ class GAETrainer:
         scores = torch.cat(all_scores).numpy()
         labels = torch.cat(all_labels).numpy()
         preds = (scores > threshold).astype(int)
+        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='binary', zero_division=0)
+        fpr, tpr, thr = roc_curve(labels, scores)
         tp = ((preds==1)&(labels==1)).sum(); fn = ((preds==0)&(labels==1)).sum()
         tn = ((preds==0)&(labels==0)).sum(); fp = ((preds==1)&(labels==0)).sum()
         auc = roc_auc_score(labels, scores) if len(np.unique(labels))>=2 else 0.5
-        return {'auc': auc, 'total_positive': int((labels==1).sum()), 'correct_positive': int(tp), 'incorrect_positive': int(fn), 'total_negative': int((labels==0).sum()), 'correct_negative': int(tn), 'incorrect_negative': int(fp)}
+        
+        # precision recall curve
+        precision_curve, recall_curve, thresholds = precision_recall_curve(labels, scores)
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)  # avoid divide-by-zero
+        best_idx = np.argmax(f1_scores)
+        best_threshold = thresholds[best_idx]
+        
+        youden_j = tpr.max() - fpr.max()
+        self.logger.info(f"Threshold={threshold:.4f} | AUC={auc:.4f} | Precision={precision:.4f} | Recall={recall:.4f} | F1={f1:.4f} | Youden's J={youden_j:.4f}")
+
+        return {'auc': auc, 'total_positive': int((labels==1).sum()), 'correct_positive': int(tp), 'incorrect_positive': int(fn), 'total_negative': int((labels==0).sum()), 'correct_negative': int(tn), 'incorrect_negative': int(fp), 'precision': precision, 'recall': recall, 'f1': f1, 'youden_j': youden_j, 'threshold': best_threshold}
 
     def run_gae_training(self, gae, train_data, test_data, params):
         
@@ -137,6 +104,7 @@ class GAETrainer:
         opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-3)
         sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'max', patience=10, factor=0.7)
         best_auc = 0
+        best_threshold = None
         total_train_time = 0
         for epoch in range(epochs):
             start_time = time.time()
@@ -146,51 +114,21 @@ class GAETrainer:
             with self.tracker.validate():
                 metrics = self.evaluate_gae(model, test_loader, epoch+1)
                 self.tracker.log_metrics(metrics)
+                self.tracker.log_metric("step", epoch)
             auc = metrics['auc']
+            threshold = metrics.get('threshold', 0.5)
             current_lr = opt.param_groups[0]['lr']
             sched.step(auc)
             self.logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Test AUC: {auc:.4f} | LR: {current_lr:.2e}")
             if auc > best_auc:
                 best_auc = auc
+                best_threshold = threshold
+                self.logger.info(f"New best AUC: {best_auc:.4f} saving model...")
                 torch.save(model.state_dict(), os.path.join(self.folder, 'best_gae_model.pth'))
+
         self.logger.info(f"\nTotal training time: {total_train_time:.2f}s, Avg per epoch: {total_train_time/epochs:.2f}s")
         self.logger.info("\nLoading best model for final evaluation...")
         model.load_state_dict(torch.load(os.path.join(self.folder, 'best_gae_model.pth'), map_location=device))
-        all_scores, all_labels = [], []
         model.eval()
         with self.tracker.test():
-            bar = tqdm(test_loader, desc="Evaluating GAE", unit="batch")
-            
-            with torch.no_grad():
-                for batch in bar:
-                    batch = batch.to(device)
-                    z = model.encode(batch.x, batch.edge_index, batch.batch)
-                    logits = model.decode(z, batch.edge_index)
-                    scores_batch = -torch.log(torch.sigmoid(logits) + 1e-8)
-                    labels_batch = batch.edge_leak_target
-                    if scores_batch.shape[0] != labels_batch.shape[0]:
-                        m = min(scores_batch.shape[0], labels_batch.shape[0])
-                        scores_batch = scores_batch[:m]
-                        labels_batch = labels_batch[:m]
-                    all_scores.append(scores_batch.cpu().numpy())
-                    all_labels.append(labels_batch.cpu().numpy())
-            scores = np.concatenate(all_scores)
-            labels = np.concatenate(all_labels)
-            fpr, tpr, thr = roc_curve(labels, scores)
-            j_stat = tpr - fpr
-            best_idx = j_stat.argmax()
-            final_thr = thr[best_idx]
-            self.logger.info(f"Final Youden's J={j_stat[best_idx]:.4f} at threshold={final_thr:.4f}")
-            detailed_metrics = self.get_detailed_classification_metrics(model, test_loader, threshold=final_thr)
-            
-            self.tracker.log_metric("final_threshold", final_thr)
-            self.tracker.log_metrics(detailed_metrics)
-
-            self.logger.info("\nFINAL SEMI-SUPERVISED GAE RESULTS")
-            self.logger.info(f"  Test AUC: {detailed_metrics['auc']:.4f}")
-            self.logger.info(f"  Total Positive: {detailed_metrics['total_positive']}")
-            self.logger.info(f"  Correct Positive: {detailed_metrics['correct_positive']}")
-            self.logger.info(f"  Incorrect Positive: {detailed_metrics['incorrect_positive']}")
-            self.logger.info(f"  Total Negative: {detailed_metrics['total_negative']}")
-            self.logger.info(f"  Correct Negative: {detailed_metrics['correct_negative']}")
-            self.logger.info(f"  Incorrect Negative: {detailed_metrics['incorrect_negative']}")
+            self.evaluate_gae(model, test_loader, threshold=best_threshold)
