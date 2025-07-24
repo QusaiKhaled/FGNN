@@ -2,7 +2,6 @@ import os
 import torch
 import torch.nn.functional as F
 import numpy as np
-import plotly.graph_objects as go
 
 from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve, precision_recall_fscore_support
