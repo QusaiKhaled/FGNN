@@ -51,6 +51,7 @@ class GAETrainer:
     def evaluate_gae(self, model, loader, threshold=0.5, epoch=None):
         model.eval()
         all_scores, all_labels = [], []
+        self.logger.info(f"Starting evaluation of GAE model on {len(loader.dataset)} samples...")
         with torch.no_grad():
             for batch in loader:
                 batch = batch.to(self.device)
@@ -82,7 +83,7 @@ class GAETrainer:
         best_threshold = thresholds[best_idx]
         
         youden_j = tpr.max() - fpr.max()
-        self.logger.info(f"Threshold={threshold:.4f} | AUC={auc:.4f} | Precision={precision:.4f} | Recall={recall:.4f} | F1={f1:.4f} | Youden's J={youden_j:.4f}")
+        self.logger.info(f" Evaluation finished: Threshold={threshold:.4f} | AUC={auc:.4f} | Precision={precision:.4f} | Recall={recall:.4f} | F1={f1:.4f} | Youden's J={youden_j:.4f}")
 
         return {'auc': auc, 'total_positive': int((labels==1).sum()), 'correct_positive': int(tp), 'incorrect_positive': int(fn), 'total_negative': int((labels==0).sum()), 'correct_negative': int(tn), 'incorrect_negative': int(fp), 'precision': precision, 'recall': recall, 'f1': f1, 'youden_j': youden_j, 'threshold': best_threshold}
 
@@ -130,4 +131,5 @@ class GAETrainer:
         model.load_state_dict(torch.load(os.path.join(self.folder, 'best_gae_model.pth'), map_location=device))
         model.eval()
         with self.tracker.test():
-            self.evaluate_gae(model, test_loader, threshold=best_threshold)
+            metrics = self.evaluate_gae(model, test_loader, threshold=best_threshold)
+            self.tracker.log_metrics(metrics)
