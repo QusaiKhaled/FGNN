@@ -51,7 +51,7 @@ class GAETrainer:
     def evaluate_gae(self, model, loader, threshold=0.5, epoch=None):
         model.eval()
         all_scores, all_labels = [], []
-        self.logger.info(f"Starting evaluation of GAE model on {len(loader.dataset)} samples...")
+        self.logger.info(f"Starting evaluation of GAE model on ...")
         with torch.no_grad():
             for batch in loader:
                 batch = batch.to(self.device)
