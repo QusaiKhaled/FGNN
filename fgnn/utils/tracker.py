@@ -251,7 +251,7 @@ class WandBTracker:
             image = image.cpu().detach().numpy()
         if image.shape[0] < 5:
             image = image.transpose([1, 2, 0])
-        wandb.log(data={tag: wandb.Image(image, caption=tag)}, step=global_step)
+        wandb.log(data={self._context_tag(tag): wandb.Image(image, caption=tag)}, step=global_step)
 
     def log_images(
         self,
@@ -301,16 +301,16 @@ class WandBTracker:
         )
         if self.context:
             tag = f"{self.context}/{tag}"
-        wandb.log({tag: plt})
+        wandb.log({self._context_tag(tag): plt})
 
     def log_text(self, tag: str, text_string: str, global_step: int = None):
-        wandb.log({tag: text_string}, step=global_step)
+        wandb.log({self._context_tag(tag): text_string}, step=global_step)
 
     def log_figure(self, tag: str, figure: plt.figure, global_step: int = None):
-        wandb.log({tag: figure}, step=global_step)
+        wandb.log({self._context_tag(tag): figure}, step=global_step)
 
     def log_mask(self, tag: str, image, mask_dict, global_step: int = None):
-        wandb.log({tag: wandb.Image(image, masks=mask_dict)}, step=global_step)
+        wandb.log({self._context_tag(tag): wandb.Image(image, masks=mask_dict)}, step=global_step)
 
     def log_table(self, tag, data, columns, rows):
         if isinstance(data, torch.Tensor):
@@ -446,17 +446,23 @@ class WandBTracker:
             wandb.save(os.path.join(folder, file), base_path=base_path)
 
     def log_metric(self, name, metric, epoch=None):
-        if self.context:
-            name = f"{self.context}/{name}"
+        name = self._context_tag(name)
         wandb.log({name: metric})
 
     def log_metrics(self, metrics: dict, epoch=None):
-        if self.context:
-            metrics = {f"{self.context}/{k}": v for k, v in metrics.items()}
+        metrics = {self._context_tag(k): v for k, v in metrics.items()}
         wandb.log(metrics)
 
     def __repr__(self):
         return "WandbLogger"
+    
+    def _context_tag(self, tag: str):
+        """
+        Prefix the tag with the current context if set.
+        """
+        if self.context:
+            return f"{self.context}/{tag}"
+        return tag
 
     @contextmanager
     def set_context(self, new_context):

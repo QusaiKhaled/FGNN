@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn.functional as F
 import numpy as np
+import plotly.graph_objects as go
 
 from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve, precision_recall_fscore_support
@@ -14,6 +15,72 @@ from fgnn.data.dataset import FastBatchDataLoader, apply_augmentations
 from fgnn.utils.tracker import WandBTracker
 
 warnings.filterwarnings("ignore", category=UserWarning)
+
+
+def plot_anomaly_histogram(scores, labels, threshold, bins=50):
+    """
+    Returns a Plotly Figure showing a histogram of anomaly scores for normal and anomalous labels,
+    with a vertical line at the given threshold.
+
+    Parameters:
+    - scores: np.array of anomaly scores
+    - labels: np.array of binary labels (0 for normal, 1 for anomaly)
+    - threshold: float, threshold score
+    - bins: int, number of histogram bins
+
+    Returns:
+    - fig: Plotly Figure object
+    """
+    scores = np.asarray(scores)
+    labels = np.asarray(labels)
+
+    normal_scores = scores[labels == 0]
+    anomaly_scores = scores[labels == 1]
+
+    # Compute histogram counts to determine y-axis max height
+    hist_all, bin_edges = np.histogram(scores, bins=bins)
+    ymax = hist_all.max() * 1.1  # add small margin
+
+    fig = go.Figure()
+
+    # Histogram for normal scores
+    fig.add_trace(go.Histogram(
+        x=normal_scores,
+        nbinsx=bins,
+        name='Normal (Label 0)',
+        marker_color='blue',
+        opacity=0.6
+    ))
+
+    # Histogram for anomaly scores
+    fig.add_trace(go.Histogram(
+        x=anomaly_scores,
+        nbinsx=bins,
+        name='Anomaly (Label 1)',
+        marker_color='red',
+        opacity=0.6
+    ))
+
+    # Threshold vertical line — now with accurate height
+    fig.add_trace(go.Scatter(
+        x=[threshold, threshold],
+        y=[0, ymax],
+        mode='lines',
+        name=f'Threshold = {threshold:.2f}',
+        line=dict(color='black', dash='dash')
+    ))
+
+    # Layout
+    fig.update_layout(
+        title='Histogram of Anomaly Scores',
+        xaxis_title='Anomaly Score',
+        yaxis_title='Count',
+        barmode='overlay',
+        template='plotly_white',
+        legend=dict(x=0.7, y=0.95)
+    )
+
+    return fig
 
 
 class GAETrainer:
@@ -46,12 +113,13 @@ class GAETrainer:
             opt.step()
             total_loss += loss.item()
             bar.set_postfix({'loss': loss.item()})
+        self.tracker.log_metric("loss", total_loss / len(loader))
         return total_loss / len(loader)
 
-    def evaluate_gae(self, model, loader, threshold=0.5, epoch=None):
+    def evaluate_gae(self, model, loader, threshold=0.5, epoch=None, plot=False):
         model.eval()
         all_scores, all_labels = [], []
-        self.logger.info(f"Starting evaluation of GAE model on ...")
+        self.logger.info(f"Starting evaluation of GAE model...")
         with torch.no_grad():
             for batch in loader:
                 batch = batch.to(self.device)
@@ -75,6 +143,10 @@ class GAETrainer:
         tp = ((preds==1)&(labels==1)).sum(); fn = ((preds==0)&(labels==1)).sum()
         tn = ((preds==0)&(labels==0)).sum(); fp = ((preds==1)&(labels==0)).sum()
         auc = roc_auc_score(labels, scores) if len(np.unique(labels))>=2 else 0.5
+        
+        if plot:
+            fig = plot_anomaly_histogram(scores, labels, threshold)
+            self.tracker.log_figure("anomaly_scores_plot", fig)
         
         # precision recall curve
         precision_curve, recall_curve, thresholds = precision_recall_curve(labels, scores)
@@ -131,5 +203,5 @@ class GAETrainer:
         model.load_state_dict(torch.load(os.path.join(self.folder, 'best_gae_model.pth'), map_location=device))
         model.eval()
         with self.tracker.test():
-            metrics = self.evaluate_gae(model, test_loader, threshold=best_threshold)
+            metrics = self.evaluate_gae(model, test_loader, threshold=best_threshold, plot=True)
             self.tracker.log_metrics(metrics)
