@@ -118,7 +118,7 @@ class GAETrainer:
         self.tracker.log_metric("loss", total_loss / len(loader))
         return total_loss / len(loader)
 
-    def evaluate(self, model, loader, threshold=0.5, epoch=None, plot=False):
+    def evaluate(self, model, loader, threshold=0.5, plot=False):
         model.eval()
         all_scores, all_labels = [], []
         self.logger.info(f"Starting evaluation of GAE model...")
@@ -176,7 +176,7 @@ class GAETrainer:
 
         best_f1 = -1
         cur_patience = 0
-        best_threshold = None
+        best_threshold = 0.5
         total_train_time = 0
         for epoch in range(epochs):
             start_time = time.time()
@@ -184,7 +184,7 @@ class GAETrainer:
                 loss = self.train_epoch(model, train_loader, opt)
             total_train_time += time.time() - start_time
             with self.tracker.validate():
-                metrics = self.evaluate(model, val_loader, epoch+1)
+                metrics = self.evaluate(model, val_loader, threshold=best_threshold)
                 self.tracker.log_metrics(metrics)
                 self.tracker.log_metric("step", epoch)
             f1 = metrics['f1']

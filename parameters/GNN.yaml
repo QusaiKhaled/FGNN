@@ -8,7 +8,7 @@ parameters:
     epochs: [50]
     num_workers: [8]
     learning_rate: [0.001]
-    patience: [10]
+    patience: [20]
     scheduler:
       name: [ReduceLROnPlateau]
       mode: [max]
