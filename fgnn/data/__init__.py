@@ -5,11 +5,11 @@ from .preprocessor import SemiSupervisedPreprocessor
 
 def get_data(parameters, logger):
     data_path = parameters["path"]
-    window_size = parameters.get("window_size", 24)
-    stride = parameters.get("stride", 6)
+    window_size = parameters["window_size"]
+    stride = parameters["stride"]
     train_ratio = parameters.get("train_ratio", 0.7)
     val_ratio = parameters.get("val_ratio", 0.1)
-    max_windows = parameters.get("max_windows", 500)
+    max_windows = parameters.get("max_windows", None)
     anomaly_detection = parameters.get("anomaly_detection", False)
     
     logger.info(
@@ -30,6 +30,7 @@ def get_data(parameters, logger):
         val_ratio=val_ratio,
         max_windows=max_windows,
         anomaly_detection=anomaly_detection,
+        logger=logger,
     )
     train_data, val_data, test_data = preprocessor.preprocess()
     logger.info(

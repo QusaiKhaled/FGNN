@@ -1,8 +1,11 @@
+from matplotlib.pyplot import bar
 import torch
 import numpy as np
 from torch_geometric.data import Data
+from tqdm import tqdm
 
 import einops
+
 
 # --- MODIFIED: Preprocessing for Semi-Supervised Learning ---
 class SemiSupervisedPreprocessor:
@@ -11,11 +14,29 @@ class SemiSupervisedPreprocessor:
     It divides sequences into training, validation, and testing by chronological order,
     imputes missing values, normalizes features, and constructs fixed-size windows.
     """
-    def __init__(self, data, window_size=288, stride=144, train_ratio=0.6, val_ratio=0.2,
-                 max_windows=None, num_nodes_features=1, anomaly_detection=False):
-        assert train_ratio + val_ratio < 1.0, "Train + val ratio must be < 1.0 (remainder is test)"
+
+    def __init__(
+        self,
+        data,
+        window_size,
+        stride,
+        train_ratio=0.6,
+        val_ratio=0.2,
+        max_windows=None,
+        num_nodes_features=1,
+        anomaly_detection=False,
+        logger=None,
+    ):
+        assert (
+            train_ratio + val_ratio < 1.0
+        ), "Train + val ratio must be < 1.0 (remainder is test)"
         self.data = data
         self.window_size = window_size
+
+        if stride < 1:
+            # Stride is a percentage of the windows_size
+            stride = int(window_size * stride)
+
         self.stride = stride
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
@@ -24,16 +45,21 @@ class SemiSupervisedPreprocessor:
         self.num_node_features = num_nodes_features
         self.num_timesteps = data.x.shape[1] // self.num_node_features
         self.anomaly_detection = anomaly_detection
+        self.logger = logger
 
     def _split_time(self):
         train_end = int(self.num_timesteps * self.train_ratio)
         val_end = int(self.num_timesteps * (self.train_ratio + self.val_ratio))
 
-        seq = self.data.x.view(self.num_nodes, self.num_timesteps, self.num_node_features)
+        seq = self.data.x.view(
+            self.num_nodes, self.num_timesteps, self.num_node_features
+        )
 
-        return (seq[:, :train_end, :], self.data.leak_target[:, :train_end]), \
-               (seq[:, train_end:val_end, :], self.data.leak_target[:, train_end:val_end]), \
-               (seq[:, val_end:, :], self.data.leak_target[:, val_end:])
+        return (
+            (seq[:, :train_end, :], self.data.leak_target[:, :train_end]),
+            (seq[:, train_end:val_end, :], self.data.leak_target[:, train_end:val_end]),
+            (seq[:, val_end:, :], self.data.leak_target[:, val_end:]),
+        )
 
     def _impute_and_normalize(self, x_train, x_val, x_test):
         # Convert to NumPy for efficient nan operations
@@ -66,16 +92,23 @@ class SemiSupervisedPreprocessor:
         if self.max_windows:
             num_to_process = min(num_to_process, self.max_windows)
 
-        for i in range(num_to_process):
+        bar = tqdm(
+            range(num_to_process),
+            total=num_to_process,
+            desc=f"Creating windows for {split_type}",
+            file=getattr(self.logger, "stream", None) if self.logger else None,
+        )
+
+        for i in bar:
             start = i * self.stride
             end = start + self.window_size
+
             x_w = x[:, start:end, :].reshape(self.num_nodes, -1)
             y_w = y[:, start:end]
 
-            # Build edge-level targets
-            edge_leak = torch.zeros(self.data.edge_index.shape[1], dtype=torch.float)
-            for j, (u, v) in enumerate(self.data.edge_index.t()):
-                edge_leak[j] = float((y_w[u].max() > 0) or (y_w[v].max() > 0))
+            # Vectorized edge leak computation
+            node_flag = (y_w > 0).any(dim=1).float()
+            edge_leak = node_flag[self.data.edge_index].max(dim=0).values
 
             graph = Data(x=x_w, edge_index=self.data.edge_index, edge_label=edge_leak)
 
@@ -95,7 +128,9 @@ class SemiSupervisedPreprocessor:
 
         out = []
         for x in tensors:
-            static_rep = einops.repeat(self.data.static_features, 'n f -> n t f', t=x.shape[1])
+            static_rep = einops.repeat(
+                self.data.static_features, "n f -> n t f", t=x.shape[1]
+            )
             out.append(torch.cat([x, static_rep], dim=-1))
         return out
 
@@ -105,9 +140,11 @@ class SemiSupervisedPreprocessor:
         # Impute & normalize
         xt_norm, xv_norm, xte_norm = self._impute_and_normalize(xt, xv, xte)
         # Attach static features
-        xt_norm, xv_norm, xte_norm = self.attach_static_features(xt_norm, xv_norm, xte_norm)
+        xt_norm, xv_norm, xte_norm = self.attach_static_features(
+            xt_norm, xv_norm, xte_norm
+        )
         # Create windows
         train_data = self._create_windows(xt_norm, yt, "train")
-        val_data   = self._create_windows(xv_norm, yv, "val")
-        test_data  = self._create_windows(xte_norm, yte, "test")
+        val_data = self._create_windows(xv_norm, yv, "val")
+        test_data = self._create_windows(xte_norm, yte, "test")
         return train_data, val_data, test_data

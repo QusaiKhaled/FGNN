@@ -9,7 +9,6 @@ import yaml
 from io import StringIO
 import collections.abc
 from typing import Mapping
-import yaml
 
 # from label_anything.models.lam import Lam 
 

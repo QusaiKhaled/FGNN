@@ -5,18 +5,28 @@ parameters:
 
   training:
     batch_size: [8]
-    epochs: [10, 20, 40]
+    epochs: [50]
     num_workers: [8]
-    learning_rate: [0.01, 0.001, 0.0001]
-    
+    learning_rate: [0.001]
+    patience: [10]
+    scheduler:
+      name: [ReduceLROnPlateau]
+      mode: [max]
+      factor: [0.5]
+      patience: [3]
+      threshold: [0.0001]
+      threshold_mode: [rel]
+
   dataset:
     path: [Data/Water_Graph_dist.pt]
+    window_size: [12, 24, 48]
+    stride: [0.3]
 
   model:
     name: [GAE]
     hidden_dim: [32, 64, 128]
     latent_dim: [32]
-    depth: [1, 2, 4, 8]
+    depth: [2, 8]
     dropout: [0.3]
 
 other_grids:

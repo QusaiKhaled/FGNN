@@ -12,6 +12,7 @@ import time
 import warnings
 
 from fgnn.data.dataset import FastBatchDataLoader, apply_augmentations
+from fgnn.scheduler import get_scheduler
 from fgnn.utils.metrics import compute_metrics
 from fgnn.utils.tracker import WandBTracker
 
@@ -154,10 +155,12 @@ class GAETrainer:
     def train(self, gae, train_data, val_data, test_data, params):
         
         train_params = params.training
-        
+        sched_params = train_params.scheduler
+
         batch_size = train_params.batch_size
         epochs = train_params.epochs
         lr = train_params.learning_rate
+        patience = train_params.get("patience", None)
         
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.logger.info(f"Using device: {device}")
@@ -168,9 +171,11 @@ class GAETrainer:
         
         model = gae.to(device)
         self.logger.info(f"GAE model params: {sum(p.numel() for p in model.parameters()):,}")
-        opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-3)
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'max', patience=10, factor=0.7)
-        best_auc = 0
+        opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
+        sched = get_scheduler(opt, sched_params)
+
+        best_f1 = -1
+        cur_patience = 0
         best_threshold = None
         total_train_time = 0
         for epoch in range(epochs):
@@ -182,16 +187,23 @@ class GAETrainer:
                 metrics = self.evaluate(model, val_loader, epoch+1)
                 self.tracker.log_metrics(metrics)
                 self.tracker.log_metric("step", epoch)
-            auc = metrics['auc']
+            f1 = metrics['f1']
             threshold = metrics.get('threshold', 0.5)
             current_lr = opt.param_groups[0]['lr']
-            sched.step(auc)
-            self.logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Test AUC: {auc:.4f} | LR: {current_lr:.2e}")
-            if auc > best_auc:
-                best_auc = auc
+            sched.step(f1)
+            self.logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Val F1: {f1:.4f} | LR: {current_lr:.2e}")
+            if f1 > best_f1:
+                best_f1 = f1
                 best_threshold = threshold
-                self.logger.info(f"New best AUC: {best_auc:.4f} saving model...")
+                self.logger.info(f"New best F1: {best_f1:.4f} saving model...")
                 torch.save(model.state_dict(), os.path.join(self.folder, 'best_gae_model.pth'))
+                cur_patience = 0
+            else:
+                cur_patience += 1
+                self.logger.info(f"Model didn't improve since {cur_patience} epochs.")
+                if patience is not None and cur_patience > patience:
+                    self.logger.info(f"Early stopping triggered: {cur_patience}/{patience}")
+                    break
 
         self.logger.info(f"\nTotal training time: {total_train_time:.2f}s, Avg per epoch: {total_train_time/epochs:.2f}s")
         self.logger.info("\nLoading best model for final evaluation...")

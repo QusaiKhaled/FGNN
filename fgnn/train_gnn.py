@@ -13,6 +13,7 @@ import warnings
 
 from fgnn.data.dataset import FastBatchDataLoader, apply_augmentations
 from fgnn.loss import get_loss
+from fgnn.scheduler import get_scheduler
 from fgnn.utils.metrics import compute_metrics
 from fgnn.utils.tracker import WandBTracker
 
@@ -81,17 +82,22 @@ class GNNTrainer:
         return metrics
 
     def train(self, model, train_data, val_data, test_data, params):
+        
+        train_params = params.training
+        sched_params = train_params.scheduler
+        
         batch_size = params.training.batch_size
         epochs = params.training.epochs
         lr = params.training.learning_rate
+        patience = train_params.get("patience", None)
 
         train_loader = FastBatchDataLoader(train_data, batch_size=batch_size, shuffle=True)
         val_loader = FastBatchDataLoader(val_data, batch_size=batch_size, shuffle=False)
         test_loader = FastBatchDataLoader(test_data, batch_size=batch_size, shuffle=False)
 
         model = model.to(self.device)
-        opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-3)
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'max', patience=10, factor=0.7)
+        opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
+        sched = get_scheduler(opt, sched_params)
 
         num_classes = params.dataset.num_classes
         if "loss" not in params:
@@ -117,16 +123,21 @@ class GNNTrainer:
                 self.tracker.log_metrics(metrics)
                 self.tracker.log_metric("step", epoch)
 
-            sched.step(metrics['f1'])
+            f1 = metrics['f1']
+            threshold = metrics.get('threshold', 0.5)
             current_lr = opt.param_groups[0]['lr']
-            self.logger.info(
-                f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | F1: {metrics['f1']:.4f} | LR: {current_lr:.2e}"
-            )
-
-            if metrics['f1'] > best_f1:
-                best_f1 = metrics['f1']
-                self.logger.info(f"New best F1: {best_f1:.4f}, saving model...")
-                torch.save(model.state_dict(), os.path.join(self.folder, 'best_model.pth'))
+            sched.step(f1)
+            self.logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Val F1: {f1:.4f} | LR: {current_lr:.2e}")
+            if f1 > best_f1:
+                best_f1 = f1
+                self.logger.info(f"New best F1: {best_f1:.4f} saving model...")
+                torch.save(model.state_dict(), os.path.join(self.folder, 'best_gae_model.pth'))
+                cur_patience = 0
+            else:
+                cur_patience += 1
+                self.logger.info(f"Model didn't improve since {cur_patience} epochs.")
+                if patience is not None and cur_patience > patience:
+                    self.logger.info(f"Early stopping triggered: {cur_patience}/{patience}")
 
         self.logger.info(f"Training complete — Total time: {total_train_time:.2f}s, Avg/epoch: {total_train_time/epochs:.2f}s")
         self.logger.info("Loading best model for final evaluation...")
