@@ -7,7 +7,16 @@ from .modules import BatchOptimizedSensorAttentionConv, MLPDecoder
 
 
 class GrassHopperAutoencoder(nn.Module):
-    def __init__(self, in_channels, hidden_dim, latent_dim, depth=6, dropout=0.2, max_hops=3):
+    def __init__(
+        self,
+        in_channels,
+        hidden_dim,
+        latent_dim,
+        depth=6,
+        dropout=0.2,
+        max_hops=3,
+        num_classes=None,
+    ):
         super().__init__()
         self.depth = depth
         self.dropout = nn.Dropout(dropout)
@@ -15,7 +24,9 @@ class GrassHopperAutoencoder(nn.Module):
         for i in range(depth):
             in_ch = in_channels if i == 0 else hidden_dim
             out_ch = latent_dim if i == depth - 1 else hidden_dim
-            self.convs.append(BatchOptimizedSensorAttentionConv(in_ch, out_ch, max_hops=max_hops))
+            self.convs.append(
+                BatchOptimizedSensorAttentionConv(in_ch, out_ch, max_hops=max_hops)
+            )
         self.skip_proj = nn.ModuleList()
         for i in range(depth - 1):
             in_ch = in_channels if i == 0 else hidden_dim
@@ -40,10 +51,20 @@ class GrassHopperAutoencoder(nn.Module):
 
     def decode(self, z, edge_index):
         return self.decoder(z, edge_index)
-    
-    
+
+
 class GraphAutoencoder(nn.Module):
-    def __init__(self, in_channels, hidden_dim, latent_dim, depth=6, dropout=0.2, message_passer="GAT",  **kwargs):
+    def __init__(
+        self,
+        in_channels,
+        hidden_dim,
+        latent_dim,
+        depth=6,
+        dropout=0.2,
+        message_passer="GAT",
+        num_classes=None,
+        **kwargs,
+    ):
         super().__init__()
         self.encoder = pyg_nn.__dict__[message_passer](
             in_channels=in_channels,
@@ -51,7 +72,7 @@ class GraphAutoencoder(nn.Module):
             out_channels=latent_dim,
             num_layers=depth,
             dropout=dropout,
-            **kwargs
+            **kwargs,
         )
         self.decoder = MLPDecoder(in_channels=latent_dim, hidden_channels=hidden_dim)
 

@@ -7,8 +7,10 @@ def get_data(parameters, logger):
     data_path = parameters["path"]
     window_size = parameters.get("window_size", 24)
     stride = parameters.get("stride", 6)
-    train_ratio = parameters.get("train_ratio", 0.8)
+    train_ratio = parameters.get("train_ratio", 0.7)
+    val_ratio = parameters.get("val_ratio", 0.1)
     max_windows = parameters.get("max_windows", 500)
+    anomaly_detection = parameters.get("anomaly_detection", False)
     
     logger.info(
         f"Loading data from {data_path} with window size {window_size}, stride {stride}, "
@@ -25,11 +27,13 @@ def get_data(parameters, logger):
         window_size=window_size,
         stride=stride,
         train_ratio=train_ratio,
+        val_ratio=val_ratio,
         max_windows=max_windows,
+        anomaly_detection=anomaly_detection,
     )
-    train_data, test_data = preprocessor.preprocess()
+    train_data, val_data, test_data = preprocessor.preprocess()
     logger.info(
         f"Training on {len(train_data)} windows; testing on {len(test_data)} windows."
     )
 
-    return train_data, test_data
+    return train_data, val_data, test_data

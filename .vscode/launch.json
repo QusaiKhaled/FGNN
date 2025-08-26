@@ -40,5 +40,17 @@
                 "parameters/GAE.yaml",
             ]
         },
+        {
+            "name": "Train GNN",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "grid",
+                "--parameters",
+                "parameters/GNN.yaml",
+            ]
+        },
     ]
 }

@@ -7,6 +7,8 @@ import torch
 import numpy as np
 
 import lovely_tensors as lt
+
+from fgnn.train_gnn import GNNTrainer
 lt.monkey_patch()
 
 from .data import get_data
@@ -39,19 +41,29 @@ def launch_run(parameters, run_name):
         "cache_dir": "tmp",
         **tracker_par,
     }
+    anomaly_detection = "gae" in model_params.name.lower()
+    dataset_params["anomaly_detection"] = anomaly_detection
 
     wandb_run = wandb_experiment(parameters, logger, reinit=True)
 
-    train_data, test_data = get_data(dataset_params, logger)
+    train_data, val_data, test_data = get_data(dataset_params, logger)
+
+    num_classes = max([int(t.edge_label.max().item()) for t in train_data])
+    if num_classes > 1:
+        num_classes += 1  # include zero class
     node_features = train_data[0].x.shape[1]
-    
+
+    dataset_params["num_classes"] = num_classes
+
     model_params["in_channels"] = node_features
+    model_params["num_classes"] = num_classes
     model = get_model(model_params)
     
-    if "gae" in model_params.name.lower():
+    if anomaly_detection:
         gae_trainer = GAETrainer(tracker=wandb_run, logger=logger, folder=run_name)
-        gae_trainer.run_gae_training(model, train_data, test_data, params)
+        gae_trainer.train(model, train_data, val_data, test_data, params)
     else:
-        raise NotImplementedError(f"Model {model_params.name} is not implemented for training.")
-        
+        gnn_trainer = GNNTrainer(tracker=wandb_run, logger=logger, folder=run_name)
+        gnn_trainer.train(model, train_data, val_data, test_data, params)
+
     wandb_run.end()

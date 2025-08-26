@@ -12,6 +12,7 @@ import time
 import warnings
 
 from fgnn.data.dataset import FastBatchDataLoader, apply_augmentations
+from fgnn.utils.metrics import compute_metrics
 from fgnn.utils.tracker import WandBTracker
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -91,7 +92,7 @@ class GAETrainer:
         self.folder = folder
 
     # --- Training & Evaluation Logic for GAE ---
-    def train_gae_epoch(self, model, loader, opt):
+    def train_epoch(self, model, loader, opt):
         model.train()
         total_loss = 0
         bar = tqdm(loader, desc="Training GAE", unit="batch")
@@ -116,7 +117,7 @@ class GAETrainer:
         self.tracker.log_metric("loss", total_loss / len(loader))
         return total_loss / len(loader)
 
-    def evaluate_gae(self, model, loader, threshold=0.5, epoch=None, plot=False):
+    def evaluate(self, model, loader, threshold=0.5, epoch=None, plot=False):
         model.eval()
         all_scores, all_labels = [], []
         self.logger.info(f"Starting evaluation of GAE model...")
@@ -126,7 +127,7 @@ class GAETrainer:
                 z = model.encode(batch.x, batch.edge_index, batch.batch)
                 logits = model.decode(z, batch.edge_index)
                 anomaly_scores = -torch.log(torch.sigmoid(logits) + 1e-8)
-                labels = batch.edge_leak_target
+                labels = batch.edge_label
                 if anomaly_scores.shape[0] != labels.shape[0]:
                     m = min(anomaly_scores.shape[0], labels.shape[0])
                     anomaly_scores = anomaly_scores[:m]
@@ -138,28 +139,19 @@ class GAETrainer:
         scores = torch.cat(all_scores).numpy()
         labels = torch.cat(all_labels).numpy()
         preds = (scores > threshold).astype(int)
-        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='binary', zero_division=0)
-        fpr, tpr, thr = roc_curve(labels, scores)
-        tp = ((preds==1)&(labels==1)).sum(); fn = ((preds==0)&(labels==1)).sum()
-        tn = ((preds==0)&(labels==0)).sum(); fp = ((preds==1)&(labels==0)).sum()
-        auc = roc_auc_score(labels, scores) if len(np.unique(labels))>=2 else 0.5
         
         if plot:
             fig = plot_anomaly_histogram(scores, labels, threshold)
             self.tracker.log_figure("anomaly_scores_plot", fig)
         
         # precision recall curve
-        precision_curve, recall_curve, thresholds = precision_recall_curve(labels, scores)
-        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)  # avoid divide-by-zero
-        best_idx = np.argmax(f1_scores)
-        best_threshold = thresholds[best_idx]
-        
-        youden_j = tpr.max() - fpr.max()
-        self.logger.info(f" Evaluation finished: Threshold={threshold:.4f} | AUC={auc:.4f} | Precision={precision:.4f} | Recall={recall:.4f} | F1={f1:.4f} | Youden's J={youden_j:.4f}")
+        metrics = compute_metrics(labels, preds, scores)
 
-        return {'auc': auc, 'total_positive': int((labels==1).sum()), 'correct_positive': int(tp), 'incorrect_positive': int(fn), 'total_negative': int((labels==0).sum()), 'correct_negative': int(tn), 'incorrect_negative': int(fp), 'precision': precision, 'recall': recall, 'f1': f1, 'youden_j': youden_j, 'threshold': best_threshold}
+        self.logger.info(f" Evaluation finished: Threshold={threshold:.4f} | AUC={metrics['auc']:.4f} | Precision={metrics['precision']:.4f} | Recall={metrics['recall']:.4f} | F1={metrics['f1']:.4f} | Youden's J={metrics['youden_j']:.4f}")
 
-    def run_gae_training(self, gae, train_data, test_data, params):
+        return metrics
+
+    def train(self, gae, train_data, val_data, test_data, params):
         
         train_params = params.training
         
@@ -169,8 +161,11 @@ class GAETrainer:
         
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.logger.info(f"Using device: {device}")
+        
         train_loader = FastBatchDataLoader(train_data, batch_size=batch_size, shuffle=True)
+        val_loader = FastBatchDataLoader(val_data, batch_size=batch_size, shuffle=False)
         test_loader = FastBatchDataLoader(test_data, batch_size=batch_size, shuffle=False)
+        
         model = gae.to(device)
         self.logger.info(f"GAE model params: {sum(p.numel() for p in model.parameters()):,}")
         opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-3)
@@ -181,10 +176,10 @@ class GAETrainer:
         for epoch in range(epochs):
             start_time = time.time()
             with self.tracker.train():
-                loss = self.train_gae_epoch(model, train_loader, opt)
+                loss = self.train_epoch(model, train_loader, opt)
             total_train_time += time.time() - start_time
             with self.tracker.validate():
-                metrics = self.evaluate_gae(model, test_loader, epoch+1)
+                metrics = self.evaluate(model, val_loader, epoch+1)
                 self.tracker.log_metrics(metrics)
                 self.tracker.log_metric("step", epoch)
             auc = metrics['auc']
@@ -203,5 +198,5 @@ class GAETrainer:
         model.load_state_dict(torch.load(os.path.join(self.folder, 'best_gae_model.pth'), map_location=device))
         model.eval()
         with self.tracker.test():
-            metrics = self.evaluate_gae(model, test_loader, threshold=best_threshold, plot=True)
+            metrics = self.evaluate(model, test_loader, threshold=best_threshold, plot=True)
             self.tracker.log_metrics(metrics)

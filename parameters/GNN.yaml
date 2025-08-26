@@ -1,4 +1,4 @@
-group: FirstGAEExperiment
+group: FirstGNNExperiment
 
 parameters:
   seed: [42]
@@ -13,10 +13,18 @@ parameters:
     path: [Data/Water_Graph_dist.pt]
 
   model:
-    name: [GAE]
+    name: [GNN]
     hidden_dim: [32, 64, 128]
     latent_dim: [32]
     depth: [1, 2, 4, 8]
     dropout: [0.3]
+
+  loss:
+    -
+      name: [Focal]
+      alpha: [0.25]
+      gamma: [2.0]
+    -
+      name: BCEWithLogitsLoss
 
 other_grids:

@@ -1,3 +1,4 @@
+from fgnn.models.GNN import GNNEdgeClassifier
 from .GAE import GrassHopperAutoencoder, GraphAutoencoder
 
 
@@ -21,7 +22,8 @@ def get_model(parameters):
 
     models = {
         'GHAE': GrassHopperAutoencoder,
-        'GAE': GraphAutoencoder
+        'GAE': GraphAutoencoder,
+        'GNN': GNNEdgeClassifier,
     }
 
     if model_name not in models:
