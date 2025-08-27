@@ -131,7 +131,7 @@ class GNNTrainer:
             if f1 > best_f1:
                 best_f1 = f1
                 self.logger.info(f"New best F1: {best_f1:.4f} saving model...")
-                torch.save(model.state_dict(), os.path.join(self.folder, 'best_gae_model.pth'))
+                torch.save(model.state_dict(), os.path.join(self.folder, 'best_model.pth'))
                 cur_patience = 0
             else:
                 cur_patience += 1
