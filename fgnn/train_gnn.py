@@ -138,6 +138,7 @@ class GNNTrainer:
                 self.logger.info(f"Model didn't improve since {cur_patience} epochs.")
                 if patience is not None and cur_patience > patience:
                     self.logger.info(f"Early stopping triggered: {cur_patience}/{patience}")
+                    break
 
         self.logger.info(f"Training complete — Total time: {total_train_time:.2f}s, Avg/epoch: {total_train_time/epochs:.2f}s")
         self.logger.info("Loading best model for final evaluation...")
