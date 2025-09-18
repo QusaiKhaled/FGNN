@@ -91,7 +91,7 @@ Timeseries of all leakages in the Evaluation Dataset (year 2019) of the BattLeDI
 Measurement units: Cubic meters per hour(m^3/h). 
 Column headings correspond to Link IDs in the L-Town.inp network file. 
 
-Additional simulated dataset can be found via link https://drive.google.com/file/d/1vqtiP83AqlsJjUxxaIaBNfexP-13bZRn/view?usp=drive_link. the simulated scenarios can be found in LeakDB-master\CCWI-WDSA2018\Benchmarks\L-TOWN\Scenario....\Pressures. The leak description can be found in Scenario....\Leaks. The data generation file is in LeakDB-master\CCWI-WDSA2018\Dataset_Generator\leakDataset_new. The information of package versions can be found in requirements.txt
+Additional simulated dataset can be found via link https://drive.google.com/file/d/1vqtiP83AqlsJjUxxaIaBNfexP-13bZRn/view?usp=drive_link, including drifted test data and more training datasets with leakages.
  
 
 # Acknowledgements
