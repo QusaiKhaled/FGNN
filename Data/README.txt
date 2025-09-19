@@ -91,8 +91,7 @@ Timeseries of all leakages in the Evaluation Dataset (year 2019) of the BattLeDI
 Measurement units: Cubic meters per hour(m^3/h). 
 Column headings correspond to Link IDs in the L-Town.inp network file. 
 
-Additional simulated dataset can be found via link https://drive.google.com/file/d/1y8nDoaLXTkm0D1tLz2i0-c2EDBKb0u8D/view?usp=drive_link, including drifted test data and more training datasets with leakages.
+Additional simulated dataset can be found via link https://drive.google.com/file/d/13U9JMgHjrQHEMCmRKnv54ldGnJDBuGKz/view?usp=drive_link, including drifted test data and more training datasets with leakages.
  
-
 # Acknowledgements
 Part of this work has been partially funded by the European Union Horizon 2020 program under Grant Agreement No. 739551 (KIOS CoE), by the Interreg V-A Greece-Cyprus 2014-2020 program, co-financed by the European Union (ERDF) and National Funds of Greece and Cyprus under project SmartWater2020 and by the Deutsche Forschungsgemeinschaft (DFG).
