@@ -1,4 +1,4 @@
-group: 2018_2019_FirstExperiment
+group: SecondGNNExperiment
 
 parameters:
   seed: [42]
@@ -18,21 +18,22 @@ parameters:
       threshold_mode: [rel]
     
   dataset:
-    path: [Data/Water_Graph_dist_1819.pt]
-    window_size: [12]
+    path: [Data/Water_Graph_dist.pt]
+    window_size: [12, 24, 48]
     stride: [0.3]
-    split: [year] # Split the dataset by year
-    train_ratio: [0.8]
-    val_ratio: [0.2]
 
   model:
     name: [GNN]
-    hidden_dim: [128]
+    hidden_dim: [32, 64, 128]
     latent_dim: [32]
-    depth: [8, 16]
+    depth: [2, 4, 8, 16, 32]
     dropout: [0.3]
 
   loss:
+    -
+      name: Focal
+      alpha: 0.25
+      gamma: 2.0
     -
       name: BCEWithLogitsLoss
 

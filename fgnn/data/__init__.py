@@ -11,6 +11,7 @@ def get_data(parameters, logger):
     val_ratio = parameters.get("val_ratio", 0.1)
     max_windows = parameters.get("max_windows", None)
     anomaly_detection = parameters.get("anomaly_detection", False)
+    split = parameters.get("split", None)
     
     logger.info(
         f"Loading data from {data_path} with window size {window_size}, stride {stride}, "
@@ -18,6 +19,17 @@ def get_data(parameters, logger):
     )
 
     raw_data = torch.load(data_path, map_location="cpu", weights_only=False)
+    
+    if split == "year":
+        logger.info("Using year-based split")
+        trainval_data_len = sum(raw_data.year_len[:-1]).item()
+        test_data_len = raw_data.x.shape[1] - trainval_data_len
+        train_data_len = int(trainval_data_len * train_ratio)
+        val_data_len = trainval_data_len - train_data_len
+        train_ratio = train_data_len / raw_data.x.shape[1]
+        val_ratio = val_data_len / raw_data.x.shape[1]
+        test_ratio = test_data_len / raw_data.x.shape[1]
+        logger.info(f"Calculated train ratio: {train_ratio}, val ratio: {val_ratio}, test ratio: {test_ratio}")
     
     logger.info(
         f"Raw data loaded with {len(raw_data)} samples. Preprocessing to create windows."

@@ -68,6 +68,18 @@ source .venv/bin/activate
 
 ### Create Graphs
 
+Graph with 2018 data only
 ```bash
-python main.py create
+python main.py create --parameters parameters/preprocessing/feature_distance.yaml
+```
+
+Graph with 2018 and 2019 data
+```bash
+python main.py create --parameters parameters/preprocessing/feature_distance_1819.yaml
+```
+
+### Train
+
+```bash
+python main.py grid --parameters parameters/GNN_2018.yaml
 ```

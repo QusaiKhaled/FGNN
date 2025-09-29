@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Create",
+            "name": "Create 2018",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
@@ -14,6 +14,18 @@
                 "create",
                 "-p",
                 "parameters/preprocessing/feature_distance.yaml",
+            ]
+        },
+        {
+            "name": "Create 2018_2019",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "create",
+                "-p",
+                "parameters/preprocessing/feature_distance_1819.yaml",
             ]
         },
         {
@@ -38,6 +50,18 @@
                 "grid",
                 "--parameters",
                 "parameters/GAE.yaml",
+            ]
+        },
+        {
+            "name": "Train GNN 2018",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "grid",
+                "--parameters",
+                "parameters/GNN_2018.yaml",
             ]
         },
         {

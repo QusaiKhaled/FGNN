@@ -198,11 +198,20 @@ def create_graph_water(parameters):
     random_edge = random.choice(list(G.edges(data=True)))
     print("Random edge:", random_edge)
 
+    years = parameters.get("years", [2018])
     ### `Step 2: Add your data to graph G to make Water_Graph.pt`
-    # === Load pressure data only ===
-    pressure_df = read_sheet_with_decimal(
-        root / "2018_SCADA.xlsx", "Pressures (m)", "Timestamp"
-    )
+    # === Load pressure data for all specified years and concatenate ===
+    pressure_dfs = []
+    year_len = []
+    for year in years:
+        pressure_file = root / f"{year}_SCADA.xlsx"
+        pressure_df_year = read_sheet_with_decimal(
+            pressure_file, "Pressures (m)", "Timestamp"
+        )
+        pressure_dfs.append(pressure_df_year)
+        year_len.append(len(pressure_df_year))
+    # Concatenate along the time axis (index)
+    pressure_df = pd.concat(pressure_dfs, axis=0)
     # This will be used as node features (pressure over time for each node)
 
     # === Graph setup ===
@@ -237,17 +246,27 @@ def create_graph_water(parameters):
     data.static_features = torch.tensor(
         static_features, dtype=torch.float
     )
+    
+    # Add the year separation info to the data object
+    data.year_len = torch.tensor(year_len, dtype=torch.long)
 
     # === Load leakage target CSV ===
     # This file contains leakage values per pipe over time (target variable)
-    leak_df = pd.read_csv(
-        "Data/2018_Leakages.csv",
-        sep=";",  # Semicolon-separated
-        decimal=",",  # Comma as decimal separator
-        index_col="Timestamp",
-        parse_dates=True,  # Parse timestamp into datetime
-        low_memory=False,
-    )
+    # === Load leakage target CSVs for all specified years and concatenate ===
+    leak_dfs = []
+    for year in years:
+        leak_file = root / f"{year}_Leakages.csv"
+        leak_df_year = pd.read_csv(
+            leak_file,
+            sep=";",  # Semicolon-separated
+            decimal=",",  # Comma as decimal separator
+            index_col="Timestamp",
+            parse_dates=True,  # Parse timestamp into datetime
+            low_memory=False,
+        )
+        leak_dfs.append(leak_df_year)
+    # Concatenate along the time axis (index)
+    leak_df = pd.concat(leak_dfs, axis=0)
 
     num_edges = edge_index.size(1)  # Number of edges (pipes)
     leak_target = np.full((num_edges, len(leak_df)), np.nan)  # Placeholder for targets
@@ -371,8 +390,7 @@ def create_graph_water(parameters):
     print("✅ Leak target has been binarized for leak localization (0 = no leak, 1 = leak).")
 
     # Save the updated graph
-    filename = "Water_Graph.pt"
-    if feature_distance:
-        filename = "Water_Graph_dist.pt"
+    filename = parameters.get("filename", "Water_Graph.pt")
+
     torch.save(data, root / filename)
     print(f"✅ Graph saved as '{root / filename}'.")

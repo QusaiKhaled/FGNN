@@ -1,5 +1,6 @@
 root: Data
-filename: Water_Graph_dist.pt
+years: [2018, 2019]
+filename: Water_Graph_dist_1819.pt
 
 # Adds distance to the closest valued node as a feature
 feature_distance: true
