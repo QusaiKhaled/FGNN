@@ -65,7 +65,7 @@ def make_undirected(data):
 
     return data
 
-def create_propagated_features(G, pressure_df, num_timesteps):
+def create_propagated_features(G, pressure_df, num_timesteps, static_df=None):
     
     num_nodes = len(G.nodes)  # Total number of nodes
 
@@ -76,7 +76,7 @@ def create_propagated_features(G, pressure_df, num_timesteps):
     }
 
     node_features = []
-    pressure_source_distance = []
+    static_features = []
     feature_mask = []  # 1 if original data, 0 if imputed or missing
 
     bar = tqdm(G.nodes, desc="Propagating features", unit="node", leave=False)
@@ -104,9 +104,17 @@ def create_propagated_features(G, pressure_df, num_timesteps):
                 pressure = np.full((num_timesteps, 1), np.nan)
                 dist = np.inf
                 mask = [0]
+                
+        # Add static features if available
+        if static_df is not None and node in static_df.index:
+            static_feat = static_df.loc[node].values.tolist()
+            static_feat = [dist] + static_feat
+        else:
+            static_feat = [-1] * (static_df.shape[1] if static_df is not None else 0)
+            static_feat = [dist] + static_feat
 
         node_features.append(pressure)
-        pressure_source_distance.append([dist])
+        static_features.append(static_feat)
         feature_mask.append(mask)
 
 
@@ -115,14 +123,13 @@ def create_propagated_features(G, pressure_df, num_timesteps):
 
     # Stack feature mask to form a 2D array: [num_nodes, 1]
     # feature_mask = np.array(feature_mask)
-    pressure_source_distance = torch.from_numpy(np.array(pressure_source_distance))
+    static_features = torch.from_numpy(np.array(static_features))
     node_features = torch.from_numpy(node_features).float() # [num_nodes, timesteps, features]
 
-    return node_features, pressure_source_distance
+    return node_features, static_features
 
 
-
-def create_masked_features(G_nodes, pressure_df, num_timesteps):
+def create_masked_features(G_nodes, pressure_df, num_timesteps, static_df=None):
     # === Node Features (only pressure) ===
     node_features = []  # Will hold pressure time series per node
     feature_mask = []  # Will mark which nodes have actual pressure data
@@ -218,14 +225,23 @@ def create_graph_water(parameters):
     G_nodes = list(G.nodes())  # List of nodes in the graph
     num_nodes = len(G_nodes)  # Total number of nodes
     num_timesteps = len(pressure_df)  # Number of time steps in pressure data
+    
+    
+    static_features_list = parameters.get("static", [])
+    static_features_path = root / "static2.xlsx"
+    if static_features_list:
+        static_df = pd.read_excel(static_features_path).loc[:, ["Node"] + static_features_list]
+        static_df = static_df.set_index('Node')
+    else:
+        static_df = None
 
     if feature_distance:
         x, static_features = create_propagated_features(
-            G, pressure_df, num_timesteps
+            G, pressure_df, num_timesteps, static_df
         )
     else:
         x, static_features = create_masked_features(
-            G_nodes, pressure_df, num_timesteps
+            G_nodes, pressure_df, num_timesteps, static_df
         )  # Create node features and mask
         
 

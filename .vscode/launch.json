@@ -29,6 +29,18 @@
             ]
         },
         {
+            "name": "Create 2018_2019 Static",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "create",
+                "-p",
+                "parameters/preprocessing/feature_distance_static_1819.yaml",
+            ]
+        },
+        {
             "name": "Train GHAE",
             "type": "debugpy",
             "request": "launch",
@@ -76,5 +88,17 @@
                 "parameters/GNN.yaml",
             ]
         },
+        {
+            "name": "Train GNN Static",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "grid",
+                "--parameters",
+                "parameters/GNN_static.yaml",
+            ]
+        }
     ]
 }

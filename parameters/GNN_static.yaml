@@ -1,4 +1,4 @@
-group: 2018_2019_FirstExperiment
+group: 2018_2019_Static
 
 parameters:
   seed: [42]
@@ -18,7 +18,7 @@ parameters:
       threshold_mode: [rel]
     
   dataset:
-    path: [Data/Water_Graph_dist_1819.pt]
+    path: [Data/Water_Graph_dist_static_1819.pt]
     window_size: [12, 24, 48]
     stride: [0.3]
     split: [year] # Split the dataset by year
