@@ -1,0 +1,6 @@
+root: Data
+filename: Water_Graph_dist_drift.pt
+pressure_suffix: _SCADA_Pressures_Drift.csv
+
+# Adds distance to the closest valued node as a feature
+feature_distance: true

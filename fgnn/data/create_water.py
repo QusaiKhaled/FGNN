@@ -16,9 +16,16 @@ def read_sheet_with_decimal(file, sheet, index_col):
     Reads an Excel sheet, converts comma decimals to dots, handles missing values,
     and converts index to datetime if possible.
     """
-    df = pd.read_excel(
-        file, sheet_name=sheet, dtype=str
-    )  # Read as string to handle custom decimal format
+    file = Path(file)
+    # if xlsx
+    if file.suffix in [".xlsx", ".xls"]:
+        df = pd.read_excel(
+            file, sheet_name=sheet, dtype=str
+        )  # Read as string to handle custom decimal format
+    elif file.suffix == ".csv":
+        df = pd.read_csv(
+            file, sep=";", dtype=str
+        )  # Read as string to handle custom decimal format
     df = df.set_index(index_col)  # Set the timestamp or identifier as index
 
     # Replace ',' with '.', replace 'nan' string with np.nan, convert to float
@@ -208,10 +215,13 @@ def create_graph_water(parameters):
     years = parameters.get("years", [2018])
     ### `Step 2: Add your data to graph G to make Water_Graph.pt`
     # === Load pressure data for all specified years and concatenate ===
+    
+    pressure_suffix = parameters.get("pressure_suffix", "_SCADA.xlsx")
+    
     pressure_dfs = []
     year_len = []
     for year in years:
-        pressure_file = root / f"{year}_SCADA.xlsx"
+        pressure_file = root / f"{year}{pressure_suffix}"
         pressure_df_year = read_sheet_with_decimal(
             pressure_file, "Pressures (m)", "Timestamp"
         )
