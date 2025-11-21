@@ -9,6 +9,7 @@ import numpy as np
 import lovely_tensors as lt
 
 from fgnn.train_gnn import GNNTrainer
+
 lt.monkey_patch()
 
 from .data import get_data
@@ -19,13 +20,15 @@ from .models import get_model
 from .utils.logger import get_logger
 
 
-def launch_run(parameters, run_name):
+def launch_run(
+    parameters, run_name, disable_log_params=False, disable_log_on_file=False
+):
 
     torch.autograd.set_detect_anomaly(True)
     torch.manual_seed(42)
     random.seed(42)
     np.random.seed(42)
-    
+
     logger = get_logger(run_name)
     os.makedirs(run_name, exist_ok=True)
 
@@ -58,7 +61,7 @@ def launch_run(parameters, run_name):
     model_params["in_channels"] = node_features
     model_params["num_classes"] = num_classes
     model = get_model(model_params)
-    
+
     if anomaly_detection:
         gae_trainer = GAETrainer(tracker=wandb_run, logger=logger, folder=run_name)
         gae_trainer.train(model, train_data, val_data, test_data, params)

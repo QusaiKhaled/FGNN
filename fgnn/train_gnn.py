@@ -25,6 +25,7 @@ class GNNTrainer:
         self.tracker = tracker
         self.logger = logger
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"Running on {self.device}")
         self.folder = folder
 
     def train_epoch(self, model, loader, opt, criterion):
