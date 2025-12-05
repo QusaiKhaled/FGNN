@@ -1,3 +1,4 @@
+import torch
 from fgnn.models.GNN import GNNEdgeClassifier
 from .GAE import GrassHopperAutoencoder, GraphAutoencoder
 
@@ -17,8 +18,9 @@ def get_model(parameters):
     """
     
     model_name = parameters.name
+    checkpoint = parameters.get("checkpoint", None)
 
-    parameters = {k:v for k,v in parameters.items() if k != 'name'}
+    parameters = {k:v for k,v in parameters.items() if k not in ['name', "checkpoint"]}
 
     models = {
         'GHAE': GrassHopperAutoencoder,
@@ -29,4 +31,8 @@ def get_model(parameters):
     if model_name not in models:
         raise ValueError(f"Unknown model name: {model_name}")
 
-    return models[model_name](**parameters)
+    model = models[model_name](**parameters)
+    
+    if checkpoint is not None:
+        model.load_state_dict(torch.load(checkpoint))
+    return model

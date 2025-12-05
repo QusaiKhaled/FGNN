@@ -1,0 +1,35 @@
+group: SensorDriftTest
+
+parameters:
+  seed: [42]
+
+  test:
+    batch_size: [8]
+    num_workers: [8]
+    
+  dataset:
+    path: [Data/Water_Graph_dist.pt]
+    window_size: [12, 24, 48]
+    stride: [0.3]
+
+    drift:
+      node_intervals:
+        n1: [[0.8, 1.0]]
+      step_range: [[0.00005, 0.0002]]
+
+  model:
+    name: [GNN]
+    hidden_dim: [32, 64, 128]
+    latent_dim: [32]
+    depth: [2, 4, 8, 16, 32]
+    dropout: [0.3]
+
+  loss:
+    -
+      name: Focal
+      alpha: 0.25
+      gamma: 2.0
+    -
+      name: BCEWithLogitsLoss
+
+other_grids:

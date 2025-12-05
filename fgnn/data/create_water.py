@@ -176,10 +176,7 @@ def create_masked_features(G_nodes, pressure_df, num_timesteps, static_df=None):
 def create_graph_water(parameters):
     """
     Create a graph dataset for water leak detection from an Excel file.
-
-    This function reads
-    Returns:
-        pd.DataFrame: Processed DataFrame with stripped whitespace.
+    Returns a PyG Data object (saved to disk and also returned).
     """
     root = parameters.get("root", "Data")  # Default root directory
     feature_distance = parameters.get("feature_distance", False)
@@ -192,30 +189,20 @@ def create_graph_water(parameters):
     # Strip whitespace from all string entries in the DataFrame
     df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
-    # using networkx library to construct an undirected graph from the excel file
-
     # initialize the undirected graph
     G = nx.Graph()
 
     # Add edges to the graph from the Dataframe
-    # Each pipe connects Node 1 and Node 2
     for _, row in df.iterrows():
         G.add_edge(row["Node1"], row["Node2"], pipe=row["Pipe"])
 
-    # check all nodes and edges are mapped correctly
     print("Random node check:")
-    # Print the full name of one random node
     random_node = random.choice(list(G.nodes()))
     print("Random node:", random_node)
-
-    # Print the full name of one random edge (with data)
     random_edge = random.choice(list(G.edges(data=True)))
     print("Random edge:", random_edge)
 
     years = parameters.get("years", [2018])
-    ### `Step 2: Add your data to graph G to make Water_Graph.pt`
-    # === Load pressure data for all specified years and concatenate ===
-    
     pressure_suffix = parameters.get("pressure_suffix", "_SCADA.xlsx")
     
     pressure_dfs = []
@@ -229,13 +216,14 @@ def create_graph_water(parameters):
         year_len.append(len(pressure_df_year))
     # Concatenate along the time axis (index)
     pressure_df = pd.concat(pressure_dfs, axis=0)
-    # This will be used as node features (pressure over time for each node)
+
+    # --- Ensure pressure_df index is datetime (important for timestamps) ---
+    pressure_df.index = pd.to_datetime(pressure_df.index)
 
     # === Graph setup ===
-    G_nodes = list(G.nodes())  # List of nodes in the graph
+    G_nodes = list(G.nodes())  # List of nodes in the graph (preserves order)
     num_nodes = len(G_nodes)  # Total number of nodes
     num_timesteps = len(pressure_df)  # Number of time steps in pressure data
-    
     
     static_features_list = parameters.get("static", [])
     static_features_path = root / "static2.xlsx"
@@ -256,28 +244,30 @@ def create_graph_water(parameters):
         
 
     # === Edge Index ===
-    # Convert edges into PyG format: [2, num_edges] with node indices
     edge_index = []
     for u, v in G.edges():
-        edge_index.append(
-            [G_nodes.index(u), G_nodes.index(v)]
-        )  # Find index of each node
-
+        edge_index.append([G_nodes.index(u), G_nodes.index(v)])
     edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
 
     # === Build graph ===
     data = Data()
     data.x = x  # Node features (flattened pressure series)
     data.edge_index = edge_index  # Connectivity information
-    data.static_features = torch.tensor(
-        static_features, dtype=torch.float
-    )
+    data.static_features = torch.tensor(static_features, dtype=torch.float) if static_features is not None else None
     
     # Add the year separation info to the data object
     data.year_len = torch.tensor(year_len, dtype=torch.long)
 
-    # === Load leakage target CSV ===
-    # This file contains leakage values per pipe over time (target variable)
+    # --- NEW: Save node names (strings) so you can map node indices back to original names ---
+    data.node_names = G_nodes  # list of node name strings
+
+    # --- NEW: Attach timestamps corresponding to the timesteps in pressure_df ---
+    # 1) keep a pandas DatetimeIndex for convenience/inspection
+    data.timestamp_index = pressure_df.index  # pandas.DatetimeIndex (useful interactively)
+    # 2) also store as an int64 tensor (nanoseconds since epoch) — easy to use in ML pipelines
+    timestamps_ns = pressure_df.index.view('int64').astype('int64')  # pure np.ndarray
+    data.timestamps = torch.from_numpy(timestamps_ns).long()
+
     # === Load leakage target CSVs for all specified years and concatenate ===
     leak_dfs = []
     for year in years:
@@ -291,24 +281,18 @@ def create_graph_water(parameters):
             low_memory=False,
         )
         leak_dfs.append(leak_df_year)
-    # Concatenate along the time axis (index)
     leak_df = pd.concat(leak_dfs, axis=0)
 
     num_edges = edge_index.size(1)  # Number of edges (pipes)
     leak_target = np.full((num_edges, len(leak_df)), np.nan)  # Placeholder for targets
-    edge_pipe_names = []  # To store pipe names for each edge
+    edge_pipe_names = []
 
-    # === Match leak data to edges ===
-    # For each edge, try to find the corresponding pipe name and extract its leakage data
     for i, (u, v, attr) in enumerate(G.edges(data=True)):
-        pipe_name = attr.get("pipe")  # Get 'pipe' attribute of edge
-        edge_pipe_names.append(pipe_name)  # Store pipe name for reference
-
+        pipe_name = attr.get("pipe")
+        edge_pipe_names.append(pipe_name)
         if pipe_name in leak_df.columns:
-            # If leakage data is available for this pipe, copy it into target array
             leak_target[i, :] = leak_df[pipe_name].values
 
-    # Add leakage target as edge features
     data.leak_target = torch.tensor(leak_target, dtype=torch.float)
     data.pipe_names = edge_pipe_names  # Save pipe names for possible future reference
 
@@ -319,7 +303,6 @@ def create_graph_water(parameters):
     num_features = data.x.shape[1]
     num_edges = data.edge_index.shape[1]
 
-    # Updated: Only pressure data remains
     feature_names = ["pressure"]
     feature_dim_per_timestep = len(feature_names)
     time_series_length = num_features // feature_dim_per_timestep
@@ -330,16 +313,13 @@ def create_graph_water(parameters):
     print(f"Time series length (number of timesteps): {time_series_length}")
     print(f"Features per node: {feature_names}")
 
-    # Use feature_mask to count how many nodes have pressure data
     if hasattr(data, "feature_mask"):
         available_nodes = int(data.feature_mask.sum().item())
         print(
             f"Number of nodes with available pressure data: {available_nodes} / {num_nodes}"
         )
 
-    # If leak targets exist, analyze leaky edges
     if hasattr(data, "leak_target"):
-        # An edge is considered leaky if it has at least one non-NaN value
         leak_target = data.leak_target
         leaky_edges_mask = ~torch.isnan(leak_target).all(dim=1)
         num_leaky_edges = leaky_edges_mask.sum().item()
@@ -347,76 +327,43 @@ def create_graph_water(parameters):
             f"Number of leaky edges (with leak data): {num_leaky_edges} / {num_edges}"
         )
 
-    # Optionally, print a few pipe names as examples if available
     if hasattr(data, "pipe_names"):
         print(f"Example pipe names: {data.pipe_names[:5]}")
 
-    ### `Step 3: Make the graph undirected`
-    # === Convert the graph to undirected by adding reversed edges and duplicating edge-level data ===
+    # Make undirected (duplicates edges/edge-level data)
     data = make_undirected(data)
 
-    # Count total number of edges
     num_edges = data.edge_index.shape[1]
-
-    # Count number of edges with leakage data (should match leak_target rows)
     num_leak_edges = data.leak_target.shape[0] if hasattr(data, "leak_target") else 0
 
     print(f"Total number of edges: {num_edges}")
-    print(
-        "✅ Number of edges is now doubled due to the undirected nature of the graph."
-    )
+    print("✅ Number of edges is now doubled due to the undirected nature of the graph.")
 
-    ### `Step 4: Binarize edges as explained below`
-    # **our edge classification task means that an edge is 1 if its leaky and 0 if its none-leaky, but the existing data only have timeseries for the edges that are leaky, while all other edges were set to NaN. We do know that all edges without timeseries data are not leaky so we set their values to 0 instead of NaN, next thing, since we dont care about the amount of leak in edges but only want to determine which edges are leaky we change the type of data in the leaky edges from continuous to binary so for all leaky edges we set their values to 1 and for all non-leaky edges we set their values to 0**
-
-    # Ensure leak_target exists
+    # --- Binarize edges as before ---
     if not hasattr(data, 'leak_target') or data.leak_target is None:
         raise ValueError("The graph does not contain 'leak_target' data.")
-
-    # Tensor shape: [num_edges, timesteps]
     leak_target = data.leak_target
-
-    # Check which rows have any non-NaN values
     has_leak_data = ~torch.isnan(leak_target).all(dim=1)
-
-    # Count
     num_edges_with_target = has_leak_data.sum().item()
     num_edges_without_target = leak_target.size(0) - num_edges_with_target
 
-    # Print
     print("📌 Leak Target Availability")
     print("----------------------------")
     print(f"Total edges           : {leak_target.size(0)}")
     print(f"Edges with targets    : {num_edges_with_target}")
     print(f"Edges without targets : {num_edges_without_target}")
     
-    # setting target edges without leak to zero leak value
-
-    # Check that leak_target exists
-    if not hasattr(data, 'leak_target') or data.leak_target is None:
-        raise ValueError("This graph does not contain 'leak_target' data.")
-
-    # Identify edges where all values are NaN
-    leak_target = data.leak_target  # shape: [num_edges, timesteps]
-    mask_all_nan = torch.isnan(leak_target).all(dim=1)  # shape: [num_edges]
-
-    # Set all-NaN rows to 0
+    mask_all_nan = torch.isnan(leak_target).all(dim=1)
     data.leak_target[mask_all_nan] = 0.0
-
     print(f"✅ Set leak target to 0 for {mask_all_nan.sum().item()} edges with no leak data.")
     
-    
-    # Check that leak_target exists
-    if not hasattr(data, 'leak_target') or data.leak_target is None:
-        raise ValueError("This graph does not contain 'leak_target' data.")
-
-    # Binarize: set all values > 0 to 1, keep 0 as is
     data.leak_target = (data.leak_target > 0).float()
-    
     print("✅ Leak target has been binarized for leak localization (0 = no leak, 1 = leak).")
 
     # Save the updated graph
     filename = parameters.get("filename", "Water_Graph.pt")
-
     torch.save(data, root / filename)
     print(f"✅ Graph saved as '{root / filename}'.")
+
+    # Return the Data object too (convenient for immediate use)
+    return data

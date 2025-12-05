@@ -84,68 +84,73 @@ class GNNTrainer:
 
     def train(self, model, train_data, val_data, test_data, params):
         
-        train_params = params.training
-        sched_params = train_params.scheduler
-        
-        batch_size = params.training.batch_size
-        epochs = params.training.epochs
-        lr = params.training.learning_rate
-        patience = train_params.get("patience", None)
+        if "training" in params:
+            train_params = params.training
+            sched_params = train_params.scheduler
+            
+            batch_size = params.training.batch_size
+            epochs = params.training.epochs
+            lr = params.training.learning_rate
+            patience = train_params.get("patience", None)
 
-        train_loader = FastBatchDataLoader(train_data, batch_size=batch_size, shuffle=True)
-        val_loader = FastBatchDataLoader(val_data, batch_size=batch_size, shuffle=False)
+            train_loader = FastBatchDataLoader(train_data, batch_size=batch_size, shuffle=True)
+            val_loader = FastBatchDataLoader(val_data, batch_size=batch_size, shuffle=False)
+
+            model = model.to(self.device)
+            opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
+            sched = get_scheduler(opt, sched_params)
+
+            num_classes = params.dataset.num_classes
+            if "loss" not in params:
+                if num_classes > 1:
+                    params.loss = {"name": "BCEWithLogitsLoss"}
+                else:
+                    params.loss = {"name": "CrossEntropyLoss"}
+            params["num_classes"] = num_classes
+                    
+            criterion = get_loss(params.loss)
+
+            best_f1 = -1
+            total_train_time = 0
+
+            for epoch in range(epochs):
+                start_time = time.time()
+                with self.tracker.train():
+                    loss = self.train_epoch(model, train_loader, opt, criterion)
+                total_train_time += time.time() - start_time
+
+                with self.tracker.validate():
+                    metrics = self.evaluate(model, val_loader)
+                    self.tracker.log_metrics(metrics)
+                    self.tracker.log_metric("step", epoch)
+
+                f1 = metrics['f1']
+                threshold = metrics.get('threshold', 0.5)
+                current_lr = opt.param_groups[0]['lr']
+                sched.step(f1)
+                self.logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Val F1: {f1:.4f} | LR: {current_lr:.2e}")
+                if f1 > best_f1:
+                    best_f1 = f1
+                    self.logger.info(f"New best F1: {best_f1:.4f} saving model...")
+                    torch.save(model.state_dict(), os.path.join(self.folder, 'best_model.pth'))
+                    cur_patience = 0
+                else:
+                    cur_patience += 1
+                    self.logger.info(f"Model didn't improve since {cur_patience} epochs.")
+                    if patience is not None and cur_patience > patience:
+                        self.logger.info(f"Early stopping triggered: {cur_patience}/{patience}")
+                        break
+
+            self.logger.info(f"Training complete — Total time: {total_train_time:.2f}s, Avg/epoch: {total_train_time/epochs:.2f}s")
+            self.logger.info("Loading best model for final evaluation...")
+            model.load_state_dict(torch.load(os.path.join(self.folder, 'best_model.pth'), map_location=self.device))
+            model.eval()
+
+        batch_size = params.test.get("batch_size", params.get("training", {}).get("batch_size", None))
         test_loader = FastBatchDataLoader(test_data, batch_size=batch_size, shuffle=False)
-
-        model = model.to(self.device)
-        opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
-        sched = get_scheduler(opt, sched_params)
-
-        num_classes = params.dataset.num_classes
-        if "loss" not in params:
-            if num_classes > 1:
-                params.loss = {"name": "BCEWithLogitsLoss"}
-            else:
-                params.loss = {"name": "CrossEntropyLoss"}
-        params["num_classes"] = num_classes
-                
-        criterion = get_loss(params.loss)
-
-        best_f1 = -1
-        total_train_time = 0
-
-        for epoch in range(epochs):
-            start_time = time.time()
-            with self.tracker.train():
-                loss = self.train_epoch(model, train_loader, opt, criterion)
-            total_train_time += time.time() - start_time
-
-            with self.tracker.validate():
-                metrics = self.evaluate(model, val_loader)
-                self.tracker.log_metrics(metrics)
-                self.tracker.log_metric("step", epoch)
-
-            f1 = metrics['f1']
-            threshold = metrics.get('threshold', 0.5)
-            current_lr = opt.param_groups[0]['lr']
-            sched.step(f1)
-            self.logger.info(f"Epoch {epoch+1:02d} | Loss: {loss:.4f} | Val F1: {f1:.4f} | LR: {current_lr:.2e}")
-            if f1 > best_f1:
-                best_f1 = f1
-                self.logger.info(f"New best F1: {best_f1:.4f} saving model...")
-                torch.save(model.state_dict(), os.path.join(self.folder, 'best_model.pth'))
-                cur_patience = 0
-            else:
-                cur_patience += 1
-                self.logger.info(f"Model didn't improve since {cur_patience} epochs.")
-                if patience is not None and cur_patience > patience:
-                    self.logger.info(f"Early stopping triggered: {cur_patience}/{patience}")
-                    break
-
-        self.logger.info(f"Training complete — Total time: {total_train_time:.2f}s, Avg/epoch: {total_train_time/epochs:.2f}s")
-        self.logger.info("Loading best model for final evaluation...")
-        model.load_state_dict(torch.load(os.path.join(self.folder, 'best_model.pth'), map_location=self.device))
         model.eval()
-
+        model = model.to(self.device)
+        
         with self.tracker.test():
             metrics = self.evaluate(model, test_loader)
             self.tracker.log_metrics(metrics)

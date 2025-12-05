@@ -1,6 +1,6 @@
 import torch
 
-from .preprocessor import SemiSupervisedPreprocessor
+from .preprocessor import SemiSupervisedPreprocessor, add_drift
 
 
 def get_data(parameters, logger):
@@ -34,6 +34,14 @@ def get_data(parameters, logger):
     logger.info(
         f"Raw data loaded with {len(raw_data)} samples. Preprocessing to create windows."
     )
+    drift_parameters = parameters.get("drift", None)
+    if drift_parameters is not None:
+        logger.info("Applying drift to the data as per drift parameters.")
+        raw_data = add_drift(
+            raw_data,
+            **drift_parameters
+        )
+        logger.info("Drift applied.")
     preprocessor = SemiSupervisedPreprocessor(
         raw_data,
         window_size=window_size,
