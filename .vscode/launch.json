@@ -89,6 +89,18 @@
             ]
         },
         {
+            "name": "Train GNN 2018 Fuzzy",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "grid",
+                "--parameters",
+                "parameters/GNN_2018_fuzzy.yaml",
+            ]
+        },
+        {
             "name": "Train GNN 2018 drift",
             "type": "debugpy",
             "request": "launch",

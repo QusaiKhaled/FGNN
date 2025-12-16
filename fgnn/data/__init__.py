@@ -1,5 +1,7 @@
 import torch
 
+from fgnn.data.fuzzifier import fuzzify
+
 from .preprocessor import SemiSupervisedPreprocessor, add_drift
 
 
@@ -56,5 +58,9 @@ def get_data(parameters, logger):
     logger.info(
         f"Training on {len(train_data)} windows; testing on {len(test_data)} windows."
     )
+    
+    print("Fuzzification step")
+    if 'fuzzy' in parameters:
+        train_data, val_data, test_data = fuzzify(train_data, val_data, test_data, parameters["fuzzy"], logger)
 
     return train_data, val_data, test_data
