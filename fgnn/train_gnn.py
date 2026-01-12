@@ -146,7 +146,8 @@ class GNNTrainer:
             model.load_state_dict(torch.load(os.path.join(self.folder, 'best_model.pth'), map_location=self.device))
             model.eval()
 
-        batch_size = params.test.get("batch_size", params.get("training", {}).get("batch_size", None))
+        test_params = params.get("test", {})
+        batch_size = test_params.get("batch_size", params.get("training", {}).get("batch_size", None))
         test_loader = FastBatchDataLoader(test_data, batch_size=batch_size, shuffle=False)
         model.eval()
         model = model.to(self.device)
