@@ -111,9 +111,6 @@ def run(
         not disable_log_params,
         not disable_log_on_file,
     )
-    raise NotImplementedError(
-        "The run command is not implemented yet. Please use the grid command instead."
-    )
 
 @cli.command("create")
 @click.option("-p", "--parameters", default="parameters/preprocessing/feature_distance.yaml", help="Path to the parameters file")

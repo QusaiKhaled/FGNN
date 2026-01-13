@@ -1,5 +1,7 @@
 import torch
 import einops
+import psutil
+import os
 
 from sklearn.cluster import KMeans
 
@@ -23,25 +25,42 @@ class Fuzzifier:
             
         self.std_devs = torch.stack(cluster_std_devs)
 
-    def fuzzify(self, X, eps=1e-8):
+    def fuzzify(self, X, batch_chunk=2048, eps=1e-8):
         """
-        Feature-wise Gaussian fuzzification
+        Feature-wise Gaussian fuzzification con chunking sul batch
+        Riduce i picchi di memoria quando B è molto grande.
         """
+        B, F = X.shape
+        C = self.n_clusters
 
-        # Align dimensions
-        X = X[:, :, None]                         # [B, F, 1]
-        centers = self.cluster_centers.T[None, :, :]  # [1, F, C]
-        stds = torch.clamp(self.std_devs.T[None, :, :], min=eps)
+        out_chunks = []
 
-        # 1-D Gaussian per feature
-        u = torch.exp(-((X - centers) ** 2) / (2 * stds ** 2))  # [B, F, C]
+        for start in range(0, B, batch_chunk):
+            end = min(start + batch_chunk, B)
+            X_chunk = X[start:end]  # [chunk_size, F]
+            chunk_size = X_chunk.shape[0]
 
-        # Flatten feature × cluster
-        u = einops.rearrange(u, 'b f c -> b (f c)')
+            # Output temporaneo per questo chunk
+            out_chunk = torch.empty(chunk_size, F * C, device=X.device, dtype=X.dtype)
 
-        # Normalize per sample (optional but consistent)
-        return u / (u.sum(dim=1, keepdim=True) + eps)
-    
+            for f in range(F):
+                x_f = X_chunk[:, f:f+1]                     # [chunk_size, 1]
+                centers_f = self.cluster_centers[:, f]      # [C]
+                stds_f = torch.clamp(self.std_devs[:, f], min=eps)
+
+                # Calcolo membership [chunk_size, C]
+                u_f = torch.exp(-((x_f - centers_f) ** 2) / (2 * stds_f ** 2))
+
+                out_chunk[:, f*C:(f+1)*C] = u_f
+
+            # Normalizzazione per sample
+            out_chunk = out_chunk / (out_chunk.sum(dim=1, keepdim=True) + eps)
+
+            out_chunks.append(out_chunk)
+
+        # Concatenazione finale su batch dimensione
+        return torch.cat(out_chunks, dim=0)
+        
     
 class NormalizedFuzzifier:
     def __init__(self, n_clusters, n_features, X_train):
@@ -77,7 +96,7 @@ def fuzzify(train_data, val_data, test_data, params, logger):
     x_val = torch.stack([t.x for t in val_data])
     x_test = torch.stack([t.x for t in test_data])
     
-    node_features = torch.cat([x_train, x_val, x_test], dim=0)
+    node_features = torch.cat([x_train, x_val, x_test], dim=0).float()
     
     num_nodes = x_train.shape[1]
     n_features = x_train.shape[2]
@@ -93,9 +112,10 @@ def fuzzify(train_data, val_data, test_data, params, logger):
     logger.info(f"Node Cluster centers: {fuzzifier.cluster_centers}")
     logger.info(f"Node Std Devs       : {fuzzifier.std_devs}")
     
+    logger.info("Proceeding to fuzzify")
     node_features = fuzzifier.fuzzify(node_features)
     # Reshape back to [time, nodes, features]
-    node_features = einops.rearrange(node_features, '(b n) f -> b n f', n=num_nodes).float()
+    node_features = einops.rearrange(node_features, '(b n) f -> b n f', n=num_nodes)
     
     if "edge_attr" in train_data[0]:
         num_edges = train_data[0].edge_index.shape[1]
