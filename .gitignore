@@ -17,3 +17,6 @@ venv/
 out/
 wandb/
 tmp/
+lib/
+
+*.html
