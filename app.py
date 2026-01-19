@@ -362,8 +362,15 @@ test_data, raw_data, node_dim = load_data(dataset_params)
 pressure_nodes = load_pressure_data(pressure_csv)
 model = load_model(ckpt_input, {**model_params, "in_channels": node_dim})
 
-st.write("Model Parameters:", model_params)
-st.write(f"Using {node_dim}-dimensional node features.")
+with st.expander("View Model & Dataset Parameters"):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Model Parameters")
+        st.json(model_params)
+    with col2:
+        st.subheader("Dataset Parameters")
+        st.json(dataset_params)
+    st.write(f"Using {node_dim}-dimensional node features.")
 
 # Filter for samples with leaks
 leak_indices = [i for i, d in enumerate(test_data) if d.edge_label.sum() > 0]
