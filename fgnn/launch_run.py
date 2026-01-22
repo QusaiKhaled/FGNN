@@ -9,6 +9,8 @@ import numpy as np
 import lovely_tensors as lt
 
 from fgnn.train_gnn import GNNTrainer
+from fgnn.explain import ALGORITHMS, get_explainer
+from fgnn.test_xai import ExplainTester
 
 lt.monkey_patch()
 
@@ -45,6 +47,7 @@ def launch_run(
         **tracker_par,
     }
     anomaly_detection = "gae" in model_params.name.lower()
+    explainability_params = parameters.get("explainability", None)
     dataset_params["anomaly_detection"] = anomaly_detection
 
     wandb_run = wandb_experiment(parameters, logger, reinit=True)
@@ -62,11 +65,16 @@ def launch_run(
     model_params["num_classes"] = num_classes
     model = get_model(model_params)
 
-    if anomaly_detection:
-        gae_trainer = GAETrainer(tracker=wandb_run, logger=logger, folder=run_name)
-        gae_trainer.train(model, train_data, val_data, test_data, params)
+    if explainability_params is not None:
+        explainer = get_explainer(model, explainability_params)
+        explain_tester = ExplainTester(tracker=wandb_run, logger=logger, folder=run_name)
+        explain_tester.test(explainer, test_data, params)
     else:
-        gnn_trainer = GNNTrainer(tracker=wandb_run, logger=logger, folder=run_name)
-        gnn_trainer.train(model, train_data, val_data, test_data, params)
+        if anomaly_detection:
+            gae_trainer = GAETrainer(tracker=wandb_run, logger=logger, folder=run_name)
+            gae_trainer.train(model, train_data, val_data, test_data, params)
+        else:
+            gnn_trainer = GNNTrainer(tracker=wandb_run, logger=logger, folder=run_name)
+            gnn_trainer.train(model, train_data, val_data, test_data, params)
 
     wandb_run.end()
