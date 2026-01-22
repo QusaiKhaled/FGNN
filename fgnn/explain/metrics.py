@@ -1,3 +1,4 @@
+import math
 from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
@@ -95,42 +96,6 @@ def fidelity(
     explanation: Explanation,
     output_type: str = "probs",
 ) -> Tuple[float, float]:
-    r"""Evaluates the fidelity of an
-    :class:`~torch_geometric.explain.Explainer` given an
-    :class:`~torch_geometric.explain.Explanation`, as described in the
-    `"GraphFramEx: Towards Systematic Evaluation of Explainability Methods for
-    Graph Neural Networks" <https://arxiv.org/abs/2206.09677>`_ paper.
-
-    Fidelity evaluates the contribution of the produced explanatory subgraph
-    to the initial prediction, either by giving only the subgraph to the model
-    (fidelity-) or by removing it from the entire graph (fidelity+).
-    The fidelity scores capture how good an explainable model reproduces the
-    natural phenomenon or the GNN model logic.
-
-    For **phenomenon** explanations, the fidelity scores are given by:
-
-    .. math::
-        \textrm{fid}_{+} &= \frac{1}{N} \sum_{i = 1}^N
-        \| \mathbb{1}(\hat{y}_i = y_i) -
-        \mathbb{1}( \hat{y}_i^{G_{C \setminus S}} = y_i) \|
-
-        \textrm{fid}_{-} &= \frac{1}{N} \sum_{i = 1}^N
-        \| \mathbb{1}(\hat{y}_i = y_i) -
-        \mathbb{1}( \hat{y}_i^{G_S} = y_i) \|
-
-    For **model** explanations, the fidelity scores are given by:
-
-    .. math::
-        \textrm{fid}_{+} &= 1 - \frac{1}{N} \sum_{i = 1}^N
-        \mathbb{1}( \hat{y}_i^{G_{C \setminus S}} = \hat{y}_i)
-
-        \textrm{fid}_{-} &= 1 - \frac{1}{N} \sum_{i = 1}^N
-        \mathbb{1}( \hat{y}_i^{G_S} = \hat{y}_i)
-
-    Args:
-        explainer (Explainer): The explainer to evaluate.
-        explanation (Explanation): The explanation to evaluate.
-    """
     if explainer.model_config.mode == ModelMode.regression:
         raise ValueError("Fidelity not defined for 'regression' models")
 
@@ -168,8 +133,9 @@ def fidelity(
         explain_y_hat = torch.log_softmax(explain_y_hat, dim=-1)
         complement_y_hat = torch.log_softmax(complement_y_hat, dim=-1)
     elif output_type == "labels":
-        explain_y_hat = explainer.get_target(explain_y_hat)
-        complement_y_hat = explainer.get_target(complement_y_hat)
+        raise NotImplementedError(
+            "Fidelity with 'labels' output type is not implemented yet."
+        )
 
     if explanation.get("index") is not None:
         y = y[explanation.index]
@@ -177,11 +143,23 @@ def fidelity(
         complement_y_hat = complement_y_hat[explanation.index]
 
     if output_type == "labels":
-        pos_fidelity = 1.0 - (complement_y_hat == y).float().mean()
-        neg_fidelity = 1.0 - (explain_y_hat == y).float().mean()
+        raise NotImplementedError(
+            "Fidelity with 'labels' output type is not implemented yet."
+        )
     else:
-        pos_fidelity = 1.0 - F.mse_loss(complement_y_hat, y)
-        neg_fidelity = 1.0 - F.mse_loss(explain_y_hat, y)
+        m = 0.5 * (complement_y_hat + y)
+        js = 0.5 * (
+            F.kl_div(y.log(), m, reduction="batchmean") +
+            F.kl_div(complement_y_hat.log(), m, reduction="batchmean")
+        )
+        pos_fidelity = 1.0 - js / math.log(2)
+        
+        m = 0.5 * (explain_y_hat + y)
+        js = 0.5 * (
+            F.kl_div(y.log(), m, reduction="batchmean") +
+            F.kl_div(explain_y_hat.log(), m, reduction="batchmean")
+        )
+        neg_fidelity = 1.0 - js / math.log(2)
 
     return float(pos_fidelity), float(neg_fidelity)
 
