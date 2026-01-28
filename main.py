@@ -120,5 +120,21 @@ def create(parameters):
     create_graph_water(parameters=parameters)
 
 
+@cli.command("wandb_map")
+@click.argument("path")
+def wandb_map(path):
+    runs = os.listdir(path)
+    runs = [r for r in runs if os.path.isdir(os.path.join(path, r))]
+    for run in runs:
+        log_path = os.path.join(path, run, "log.log")
+        if os.path.exists(log_path):
+            with open(log_path, "r") as log_file:
+                lines = log_file.readlines()
+                wandb_lines = [l for l in lines if "View run at" in l]
+                run_lines = [l for l in lines if "Syncing run" in l]
+                if len(wandb_lines) > 0 and len(run_lines) > 0:
+                    print(run, wandb_lines[0], run_lines[0])
+
+
 if __name__ == "__main__":
     cli()

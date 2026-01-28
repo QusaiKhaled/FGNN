@@ -21,8 +21,8 @@ parameters:
   dataset:
     path: [Data/Water_Graph_dist.pt]
     # window_size: [12, 24]
-    window_size: [4, 8]
-    stride: [0.3]
+    window_size: [1, 2]
+    stride: [1]
 
     fuzzy:
       # n_clusters: [3]
