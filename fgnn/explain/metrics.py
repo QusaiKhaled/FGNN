@@ -25,6 +25,8 @@ def jensen_shannon_distance(p, q):
 
     js = 0.5 * (kl_pm + kl_qm)
     js = js / math.log(2)
+    # Clamp to 0 avoid numerical issues
+    js = torch.clamp(js, min=0.0)
     return torch.sqrt(js)
 
 
@@ -114,6 +116,7 @@ def unfaithfulness(
 def fidelity(
     explainer: Explainer,
     explanation: Explanation,
+    modality: str = "js",
 ) -> Tuple[float, float]:
     if explainer.model_config.mode == ModelMode.regression:
         raise ValueError("Fidelity not defined for 'regression' models")
@@ -150,7 +153,10 @@ def fidelity(
 
     output_type = explainer.model_config.return_type
     if output_type == ModelReturnType.probs:
-        pass
+        if y.size(-1) == 1:                     
+            explain_y_hat = to_safe_2d(explain_y_hat)
+            complement_y_hat = to_safe_2d(complement_y_hat)
+            y = to_safe_2d(y)
     elif output_type == ModelReturnType.log_probs:
         raise NotImplementedError(
             "Fidelity with 'log_probs' output type is not implemented yet."
@@ -183,12 +189,20 @@ def fidelity(
             "Fidelity with 'labels' output type is not implemented yet."
         )
     else:
-        
-        js = jensen_shannon_distance(explain_y_hat, y).mean()
-        pos_fidelity = 1.0 - js
-        
-        js = jensen_shannon_distance(complement_y_hat, y).mean()
-        neg_fidelity = 1.0 - js
+        if modality == "js":
+            js = jensen_shannon_distance(explain_y_hat, y).mean()
+            pos_fidelity = 1.0 - js
+            
+            js = jensen_shannon_distance(complement_y_hat, y).mean()
+            neg_fidelity = 1.0 - js
+        elif modality == "pred":
+            pred_matches = (explain_y_hat.argmax(dim=-1) == y.argmax(dim=-1)).float()
+            pos_fidelity = pred_matches.mean().item()
+            
+            pred_matches = (complement_y_hat.argmax(dim=-1) == y.argmax(dim=-1)).float()
+            neg_fidelity = pred_matches.mean().item()
+        else:
+            raise ValueError(f"Unknown fidelity modality '{modality}'")
 
     return float(pos_fidelity), float(neg_fidelity)
 
@@ -210,20 +224,21 @@ class UnfaithfulnessMetric(Metric):
     
     
 class FidelityMetric(Metric):
-    def __init__(self, dist_sync_on_step=False):
+    def __init__(self, dist_sync_on_step=False, modality: str = "js"):
         super().__init__(dist_sync_on_step=dist_sync_on_step)
         self.add_state("total_pos_fidelity", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_neg_fidelity", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.modality = modality
 
     def update(self, explainer: Explainer, explanation: Explanation):
-        pos_fid, neg_fid = fidelity(explainer, explanation)
+        pos_fid, neg_fid = fidelity(explainer, explanation, modality=self.modality) 
         self.total_pos_fidelity += pos_fid
         self.total_neg_fidelity += neg_fid
         self.count += 1
 
     def compute(self) -> Tuple[float, float]:
         if self.count == 0:
-            return {"pos_fidelity": torch.tensor(0.0), "neg_fidelity": torch.tensor(0.0)}
-        return {"pos_fidelity": self.total_pos_fidelity / self.count,
-                "neg_fidelity": self.total_neg_fidelity / self.count}
+            return {"pos": torch.tensor(0.0), "neg": torch.tensor(0.0)}
+        return {"pos": self.total_pos_fidelity / self.count,
+                "neg": self.total_neg_fidelity / self.count}

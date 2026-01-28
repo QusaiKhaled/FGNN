@@ -31,8 +31,9 @@ class ExplainTester:
         bar = tqdm(loader, desc="Evaluating Explainer", unit="batch")
         
         metrics = MetricCollection({
-            "fidelity": FidelityMetric(),
+            "fidelity_js": FidelityMetric(modality="js"),
             "unfaithfulness": UnfaithfulnessMetric(),
+            "fidelity_pred": FidelityMetric(modality="pred"),
         }).to(self.device)
 
         for i, batch in enumerate(bar):
@@ -52,8 +53,8 @@ class ExplainTester:
             if (i + 1) % 10 == 0:
                 current_metrics = metrics.compute()
                 bar.set_postfix({
-                    'Pos. Fidelity': f"{current_metrics['pos_fidelity']:.4f}",
-                    'Neg. Fidelity': f"{current_metrics['neg_fidelity']:.4f}",
+                    'Pos. Fidelity': f"{current_metrics['fidelity_js_pos']:.4f}",
+                    'Neg. Fidelity': f"{current_metrics['fidelity_js_neg']:.4f}",
                     'Unfaithfulness': f"{current_metrics['unfaithfulness']:.4f}",
                 })
 
