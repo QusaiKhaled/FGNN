@@ -6,6 +6,26 @@ from torch_geometric.explain import Explainer, Explanation
 from torch_geometric.explain.config import ExplanationType, MaskType, ModelMode, ModelReturnType
 
 from torchmetrics import Metric
+from scipy.spatial.distance import jensenshannon
+
+
+def to_safe_2d(p):
+    eps = 1e-9
+    p = p.clamp(min=eps, max=1-eps)
+    p = torch.cat([p, 1 - p], dim=-1)
+    p = p / p.sum(dim=-1, keepdim=True)  # normalize after clamping
+    return p
+
+
+def jensen_shannon_distance(p, q):
+    m = 0.5 * (p + q)
+
+    kl_pm = F.kl_div(m.log(), p, reduction="none").sum(dim=1)
+    kl_qm = F.kl_div(m.log(), q, reduction="none").sum(dim=1)
+
+    js = 0.5 * (kl_pm + kl_qm)
+    js = js / math.log(2)
+    return torch.sqrt(js)
 
 
 def unfaithfulness(
@@ -94,7 +114,6 @@ def unfaithfulness(
 def fidelity(
     explainer: Explainer,
     explanation: Explanation,
-    output_type: str = "probs",
 ) -> Tuple[float, float]:
     if explainer.model_config.mode == ModelMode.regression:
         raise ValueError("Fidelity not defined for 'regression' models")
@@ -108,7 +127,10 @@ def fidelity(
     edge_mask = explanation.get("edge_mask")
     kwargs = {key: explanation[key] for key in explanation._model_args}
 
-    y = explanation.target
+    y = explanation.prediction
+    
+    if len(y.shape) == 1:
+        y = y.unsqueeze(-1)
 
     explain_y_hat = explainer.get_masked_prediction(
         explanation.x,
@@ -126,16 +148,30 @@ def fidelity(
         **kwargs,
     )
 
-    if output_type == "probs":
-        explain_y_hat = torch.sigmoid(explain_y_hat)
-        complement_y_hat = torch.sigmoid(complement_y_hat)
-    elif output_type == "log_probs":
-        explain_y_hat = torch.log_softmax(explain_y_hat, dim=-1)
-        complement_y_hat = torch.log_softmax(complement_y_hat, dim=-1)
+    output_type = explainer.model_config.return_type
+    if output_type == ModelReturnType.probs:
+        pass
+    elif output_type == ModelReturnType.log_probs:
+        raise NotImplementedError(
+            "Fidelity with 'log_probs' output type is not implemented yet."
+        )
     elif output_type == "labels":
         raise NotImplementedError(
             "Fidelity with 'labels' output type is not implemented yet."
         )
+    elif output_type == ModelReturnType.raw:
+        if y.size(-1) == 1:
+            explain_y_hat = torch.sigmoid(explain_y_hat)
+            complement_y_hat = torch.sigmoid(complement_y_hat)
+            y = torch.sigmoid(y)
+                     
+            explain_y_hat = to_safe_2d(explain_y_hat)
+            complement_y_hat = to_safe_2d(complement_y_hat)
+            y = to_safe_2d(y)
+        else:
+            explain_y_hat = torch.softmax(explain_y_hat, dim=-1)
+            complement_y_hat = torch.softmax(complement_y_hat, dim=-1)
+            y = torch.softmax(y, dim=-1)
 
     if explanation.get("index") is not None:
         y = y[explanation.index]
@@ -147,19 +183,12 @@ def fidelity(
             "Fidelity with 'labels' output type is not implemented yet."
         )
     else:
-        m = 0.5 * (complement_y_hat + y)
-        js = 0.5 * (
-            F.kl_div(y.log(), m, reduction="batchmean") +
-            F.kl_div(complement_y_hat.log(), m, reduction="batchmean")
-        )
-        pos_fidelity = 1.0 - js / math.log(2)
         
-        m = 0.5 * (explain_y_hat + y)
-        js = 0.5 * (
-            F.kl_div(y.log(), m, reduction="batchmean") +
-            F.kl_div(explain_y_hat.log(), m, reduction="batchmean")
-        )
-        neg_fidelity = 1.0 - js / math.log(2)
+        js = jensen_shannon_distance(explain_y_hat, y).mean()
+        pos_fidelity = 1.0 - js
+        
+        js = jensen_shannon_distance(complement_y_hat, y).mean()
+        neg_fidelity = 1.0 - js
 
     return float(pos_fidelity), float(neg_fidelity)
 

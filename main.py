@@ -38,7 +38,12 @@ def cli():
     is_flag=True,
     help="Only create the slurm scripts",
 )
-def grid(parameters, parallel, only_create=False):
+@click.option(
+    "--device",
+    default=None,
+    help="Device to use for the runs",
+)
+def grid(parameters, parallel, only_create=False, device=None):
     parameters = load_yaml(parameters)
     run_group = parameters.pop("group")
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -74,7 +79,7 @@ def grid(parameters, parallel, only_create=False):
             )
         else:
             grid_logger.info(f"Running run {i+1}/{len(runs_parameters)}")
-            launch_run(run_parameters, run_name=run_name)
+            launch_run(run_parameters, run_name=run_name, device=device)
 
 
 @cli.command("run")
@@ -103,6 +108,7 @@ def run(
     run_name=None,
     disable_log_params=False,
     disable_log_on_file=False,
+    device=None,
 ):
     parameters = load_yaml(parameters)
     launch_run(
@@ -110,6 +116,7 @@ def run(
         run_name,
         not disable_log_params,
         not disable_log_on_file,
+        device=device,
     )
 
 @cli.command("create")

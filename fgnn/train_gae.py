@@ -86,10 +86,10 @@ def plot_anomaly_histogram(scores, labels, threshold, bins=50):
 
 
 class GAETrainer:
-    def __init__(self, tracker: WandBTracker, logger=None, folder=None):
+    def __init__(self, tracker: WandBTracker, logger=None, folder=None, device=None):
         self.tracker = tracker
         self.logger = logger
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.folder = folder
 
     # --- Training & Evaluation Logic for GAE ---

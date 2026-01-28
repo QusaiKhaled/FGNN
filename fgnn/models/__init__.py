@@ -34,5 +34,5 @@ def get_model(parameters):
     model = models[model_name](**parameters)
     
     if checkpoint is not None:
-        model.load_state_dict(torch.load(checkpoint))
+        model.load_state_dict(torch.load(checkpoint, map_location=next(model.parameters()).device))
     return model
