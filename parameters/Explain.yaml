@@ -1,0 +1,51 @@
+group: Explainability
+
+parameters:
+  seed: [42]
+  batch_size: [128]
+    
+  dataset:
+    path: [Data/Water_Graph_dist.pt]
+    window_size: [1]
+    stride: [1]
+
+    fuzzy:
+      n_clusters: [3]
+
+  model:
+    name: [GNN]
+    hidden_dim: [128]
+    latent_dim: [32]
+    depth: [8]
+    dropout: [0.3]
+    checkpoint: [checkpoints/best_model_5fb80qspl.pth]
+
+  explainability:
+    -  
+      algorithm: GNNExplainer
+      output_type: raw
+    -  
+      algorithm: "IntegratedGradients"
+      output_type: probs
+    -  
+      algorithm: "Saliency"
+      output_type: probs
+    # -  
+    #   algorithm: "ShapleyValueSampling"
+    #   output_type: probs
+    -  
+      algorithm: "GuidedBackprop"
+      output_type: probs
+    -  
+      algorithm: "Deconvolution"
+      output_type: probs
+    -  
+      algorithm: "InputXGradient"
+      output_type: probs
+    -  
+      algorithm: "AttentionExplainer"
+      output_type: raw
+      node_mask_type: null
+
+
+other_grids:

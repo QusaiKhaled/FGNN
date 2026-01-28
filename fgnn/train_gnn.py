@@ -21,10 +21,10 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class GNNTrainer:
-    def __init__(self, tracker: WandBTracker, logger=None, folder=None):
+    def __init__(self, tracker: WandBTracker, logger=None, folder=None, device=None):
         self.tracker = tracker
         self.logger = logger
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"Running on {self.device}")
         self.folder = folder
 

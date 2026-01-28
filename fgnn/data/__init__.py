@@ -63,4 +63,8 @@ def get_data(parameters, logger):
     if 'fuzzy' in parameters:
         train_data, val_data, test_data = fuzzify(train_data, val_data, test_data, parameters["fuzzy"], logger)
 
+    if parameters.get("return_raw", False):
+        logger.info("Returning raw data as well.")
+        return train_data, val_data, test_data, raw_data
+
     return train_data, val_data, test_data

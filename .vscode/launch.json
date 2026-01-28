@@ -147,6 +147,19 @@
                 "--parameters",
                 "parameters/GNN_static.yaml",
             ]
-        }
+        },
+        {
+            "name": "Test Explanation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "grid",
+                "--parameters",
+                "parameters/Explain.yaml",
+                "--device=cuda:1"
+            ]
+        },
     ]
 }

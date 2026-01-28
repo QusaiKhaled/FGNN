@@ -9,6 +9,8 @@ import numpy as np
 import lovely_tensors as lt
 
 from fgnn.train_gnn import GNNTrainer
+from fgnn.explain import ALGORITHMS, get_explainer
+from fgnn.test_xai import ExplainTester
 
 lt.monkey_patch()
 
@@ -21,7 +23,7 @@ from .utils.logger import get_logger
 
 
 def launch_run(
-    parameters, run_name, disable_log_params=False, disable_log_on_file=False
+    parameters, run_name, disable_log_params=False, disable_log_on_file=False, device=None
 ):
 
     torch.autograd.set_detect_anomaly(True)
@@ -36,6 +38,7 @@ def launch_run(
     dataset_params = params.dataset
     model_params = params.model
     tracker_par = params.tracker if "tracker" in params else {}
+    device = device if device is not None else params.get("device", None)
 
     parameters["tracker"] = {
         "project": "FGNN",
@@ -45,6 +48,7 @@ def launch_run(
         **tracker_par,
     }
     anomaly_detection = "gae" in model_params.name.lower()
+    explainability_params = parameters.get("explainability", None)
     dataset_params["anomaly_detection"] = anomaly_detection
 
     wandb_run = wandb_experiment(parameters, logger, reinit=True)
@@ -62,11 +66,16 @@ def launch_run(
     model_params["num_classes"] = num_classes
     model = get_model(model_params)
 
-    if anomaly_detection:
-        gae_trainer = GAETrainer(tracker=wandb_run, logger=logger, folder=run_name)
-        gae_trainer.train(model, train_data, val_data, test_data, params)
+    if explainability_params is not None:
+        explainer = get_explainer(model, explainability_params)
+        explain_tester = ExplainTester(tracker=wandb_run, logger=logger, folder=run_name, device=device)
+        explain_tester.test(explainer, test_data, params)
     else:
-        gnn_trainer = GNNTrainer(tracker=wandb_run, logger=logger, folder=run_name)
-        gnn_trainer.train(model, train_data, val_data, test_data, params)
+        if anomaly_detection:
+            gae_trainer = GAETrainer(tracker=wandb_run, logger=logger, folder=run_name, device=device)
+            gae_trainer.train(model, train_data, val_data, test_data, params)
+        else:
+            gnn_trainer = GNNTrainer(tracker=wandb_run, logger=logger, folder=run_name, device=device)
+            gnn_trainer.train(model, train_data, val_data, test_data, params)
 
     wandb_run.end()
