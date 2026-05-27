@@ -12,7 +12,7 @@ from scipy.spatial.distance import jensenshannon
 def to_safe_2d(p):
     eps = 1e-9
     p = p.clamp(min=eps, max=1-eps)
-    p = torch.cat([p, 1 - p], dim=-1)
+    p = torch.cat([1 - p, p], dim=-1)
     p = p / p.sum(dim=-1, keepdim=True)  # normalize after clamping
     return p
 
@@ -117,6 +117,7 @@ def fidelity(
     explainer: Explainer,
     explanation: Explanation,
     modality: str = "js",
+    return_extra: bool = False,
 ) -> Tuple[float, float]:
     if explainer.model_config.mode == ModelMode.regression:
         raise ValueError("Fidelity not defined for 'regression' models")
@@ -203,6 +204,13 @@ def fidelity(
             neg_fidelity = pred_matches.mean().item()
         else:
             raise ValueError(f"Unknown fidelity modality '{modality}'")
+        
+    if return_extra:
+        extra = {
+            "explain_y_hat": explain_y_hat,
+            "complement_y_hat": complement_y_hat,
+        }
+        return float(pos_fidelity), float(neg_fidelity), extra
 
     return float(pos_fidelity), float(neg_fidelity)
 

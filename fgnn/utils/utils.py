@@ -459,3 +459,6 @@ class DotDict(collections.abc.Mapping):
             value = DotDict(value)
         self._dict[key] = value
         setattr(self, key, value)
+        
+    def __hash__(self):
+        return hash(frozenset(self._dict.items()))
