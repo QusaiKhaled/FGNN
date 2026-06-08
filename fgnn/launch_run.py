@@ -1,5 +1,6 @@
 import random
 import os
+import tempfile
 import time
 
 import pandas as pd
@@ -42,9 +43,9 @@ def launch_run(
 
     parameters["tracker"] = {
         "project": "FGNN",
-        "group": params.group,  # Main group by model name
-        "tmp_dir": "tmp",
-        "cache_dir": "tmp",
+        "group": params.group,
+        "tmp_dir": tempfile.gettempdir(),
+        "cache_dir": tempfile.gettempdir(),
         **tracker_par,
     }
     anomaly_detection = "gae" in model_params.name.lower()
