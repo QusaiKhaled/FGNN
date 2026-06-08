@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 import time
 import os
+import tempfile
 from typing import Optional, Union, Any
 
 from wandb.errors.errors import CommError
@@ -513,7 +514,7 @@ def wandb_experiment(params: dict, logger=None, reinit=False) -> WandBTracker:
             f"Using {tmp_dir} as temporary directory from environment variables"
         )
     else:
-        tmp_dir = tracker_params.get("tmp_dir", "tmp")
+        tmp_dir = tracker_params.get("tmp_dir", tempfile.gettempdir())
         logger.info(
             f"No temporary directory found in environment variables, using {tmp_dir} for images"
         )
