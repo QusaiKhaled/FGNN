@@ -5,11 +5,11 @@ parameters:
 
   training:
     # batch_size: [1024]
-    batch_size: [32, 512]
+    batch_size: [32]
     epochs: [1000]
     num_workers: [8]
     learning_rate: [0.001]
-    patience: [20]
+    patience: [50]
     scheduler:
       name: [ReduceLROnPlateau]
       mode: [max]
@@ -21,19 +21,19 @@ parameters:
   dataset:
     path: [Data/Water_Graph_dist.pt]
     # window_size: [12, 24]
-    window_size: [4, 8]
+    window_size: [8]
     stride: [0.3]
 
     fuzzy:
       # n_clusters: [3]
-      n_clusters: [2]
+      n_clusters: [5]
 
   model:
     name: [GNN]
     # hidden_dim: [32, 64, 128]
-    hidden_dim: [128]
-    latent_dim: [32]
-    depth: [8, 16]
+    hidden_dim: [1024]
+    latent_dim: [1024]
+    depth: [8]
     dropout: [0.3]
 
   loss:

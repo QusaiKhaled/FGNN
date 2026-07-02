@@ -19,7 +19,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "scikit-learn>=1.7.0",
     "streamlit>=1.53.0",
-    "torch==2.6",
+    "torch>=2.7",
     "torch-geometric>=2.6.1",
     "torchmetrics>=1.8.2",
     "wandb>=0.21.0",

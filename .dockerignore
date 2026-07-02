@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.pth
+*.pt
+out/
+wandb/
+tmp/
+checkpoints/
+*.html
+.git/
+.vscode/
